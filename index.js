@@ -1,15 +1,13 @@
 // -*- coding: utf-8 -*-
 /**
- * محرك واتساب السحابي المدمج بعقول المجلس الاستشاري الستة (The 6 AI Council Core Engine)
+ * محرك واتساب السحابي الموحد - قيادة المجلس الاستشاري الستة
  * السعد لحلول الأعمال - تحت إشراف المهندس راكان
  * 
- * العقول الستة تدير كل كلمة وكل رد خلف الستار باسم "سعود":
- * 1. طارق المعماري (الربط الفني وهندسة الأنظمة والحلول)
- * 2. د. إبراهيم (الاستراتيجية والتفاوض الذكي على الأسعار بدون حرق)
- * 3. كلود كبير المهندسين (تحليل الاحتياج التقني للعميل بدقة هندسية)
- * 4. المحقق راشد (كشف نوايا العميل وجديته وإدارة المخاطر)
- * 5. فهد الجودة (ضبط جودة الحوار ومنع التكرار والرتابة)
- * 6. سارة (الصياغة الإنسانية الراقية باللهجة السعودية البيضاء)
+ * المعمارية المعتمدة:
+ * - المجلس الاستشاري (الستة) هو العقل المدبر والموجه لكل كلمة.
+ * - Google Gemini هو الكيبل السريع وخط الربط الخارق.
+ * - واجهة العميل الرسمية: سعود | السعد لحلول الأعمال.
+ * - الرقم الرسمي المعتمد: +966596906620
  */
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
@@ -24,95 +22,89 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "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";
+
+// مفتاح الكيبل السريع المعتمد رسمياً (Gemini Key #1)
+const GEMINI_KEY = process.env.GEMINI_API_KEY || "AQ.Ab8RN6Ic4hGNUgilybCfzlMak2kunMOxCYE7z8xsYlyneHGDuQ";
+const OFFICIAL_PHONE = "966596906620";
 
 let sock = null;
 let currentQR = null;
 let isConnected = false;
 let connectedPhone = null;
 
-// ذاكرة المحادثة لكل عميل (تحفظ تسلسل الحوار كاملاً لتفادي التكرار)
-const chatContextMemory = {};
+// ذاكرة الحوار لكل عميل (لتتبع سياق كلام المجلس معه بدون تكرار)
+const clientContext = {};
 
-// التوجيه الهيكلي لعقول المجلس الاستشاري الستة
-const COUNCIL_CONSENSUS_DIRECTIVE = `
-أنت غرفة عمليات متكاملة تمثل 'المجلس الاستشاري للذكاء الاصطناعي' المكون من 6 خبراء، تتحدثون جميعاً بصوت رجل مبيعات واستشارات سعودي محترف اسمه 'سعود' من 'السعد لحلول الأعمال':
+// دستور العقول الستة الموجه لكيبل Gemini
+const COUNCIL_BRAIN_DIRECTIVE = `
+أنت غرفة عمليات متكاملة تمثل 'المجلس الاستشاري للذكاء الاصطناعي' الستة لشركة 'السعد لحلول الأعمال'.
+تتحدثون جميعاً بصوت مستشار مبيعات سعودي ذكي وبشري محترف اسمه 'سعود':
+1. طارق المعماري: يحلل تفاصيل عمل العميل ويقدم له الحل الفني (مطعم: منيو بالصور، حجز طاولات، طلبات لوكيشن؛ عقار: عروض شقق وفلترة ومواعيد؛ مقاولات: بروفايل أعمال ورفع مقاسات).
+2. د. إبراهيم: يقود التفاوض المالي بمرونة ودهاء؛ يوضح أن السعر ميسر لمرة واحدة بدون اشتراك شهري، ويسأل العميل عن متطلباته لترتيب الباقة المناسبة لميزانيته دون حرق السعر.
+3. كلود: يفهم المشاكل العملية للعملاء (الزبائن اللي يضيعون بالليل، تنظيم الحجوزات).
+4. المحقق راشد: يضمن المصداقية والأمان ويحيل لرابط المعاينة الرسمي لطمأنة العميل.
+5. فهد الجودة: يراقب سياق الكلام ويمنع التكرار الغبي للسلام أو العبارات المحفوظة، ويدخل في صلب الجواب فوراً.
+6. سارة: تصيغ نتاج العقول الخمسة بلهجة سعودية بيضاء بشرية أصيلة، دافئة وذكية ومختصرة (سطرين إلى 4 أسطر فقط).
 
-أعضاء المجلس المشتركون في صياغة كل رد:
-1. طارق المعماري: يحدد الحل الهندسي المناسب لنشاط العميل (مطعم، مقاولات، عقار، تجارة، عيادة).
-2. د. إبراهيم الاستراتيجي: يقود التفاوض المالي بمرونة وبدون حرق السعر (لا تعطي رقماً ثابتاً في أول الحوار، بل باقات ميسرة بدون اشتراك شهري وتعتمد على حجم متطلباته).
-3. كلود كبير المهندسين: يحلل تفاصيل مشكلة العميل (الزبائن اللي يضيعون بالليل، تنظيم الطلبات، المواعيد).
-4. المحقق راشد خبير المخاطر: يضمن سلامة العرض، الأمان، وإزالة أي تخوفات من الاختراق برابط المعاينة الرسمي.
-5. فهد الجودة: يراقب سياق الكلام ويمنع تماماً أي تكرار غبي للسلام أو العبارات المحفوظة. إذا العميل قال 'وعليكم السلام'، فهد يوجه بالدخول فوراً في الموضوع.
-6. سارة خبيرة الصياغة: تصيغ نتاج العقول الخمسة بلهجة سعودية بيضاء بشرية أصيلة، دافئة وذكية ومختصرة (سطرين إلى 3 أسطر فقط).
-
-تعليمات الحوار الصارمة:
-- اقرأ تاريخ المحادثة بالكامل وتفاعل معه كإنسان جالس على الجوال ويفكر بعمق.
-- لا تذكر إطلاقاً كلمات: 'المجلس، الذكاء الاصطناعي، الخبراء، الروبوت، السيستم'. أنت في الواجهة 'سعود'.
-- رابط صفحة المعاينة الرسمية إذا سأل كيف يعمل النظام أو طلب رؤية تجربة: https://al-saad-whatsapp.onrender.com/demo
+شروط صارمة:
+- رد مباشرة على سؤال العميل بذكاء وحيوية بشرية تامة.
+- إذا سأل العميل عن طريقة العمل أو طلب فيديو: رابط المعاينة الرسمي: https://al-saad-whatsapp.onrender.com/demo
+- ممنوع ذكر أي كلمات تقنية مثل: "ذكاء اصطناعي، روبوت، خوارزمية، مجلس، برومبت". أنت سعود.
 `;
 
-// توليد رد المجلس الاستشاري التوليدي الحي
-async function getCouncilDeliberationReply(senderId, incomingText) {
-  if (!chatContextMemory[senderId]) {
-    chatContextMemory[senderId] = [
-      { role: 'system', content: COUNCIL_CONSENSUS_DIRECTIVE }
-    ];
+// توليد رد المجلس عبر الكيبل السريع المباشر (Gemini)
+async function getCouncilResponseViaCable(senderId, userText) {
+  if (!clientContext[senderId]) {
+    clientContext[senderId] = [];
   }
 
-  // إضافة رسالة العميل للذاكرة
-  chatContextMemory[senderId].push({
-    role: 'user',
-    content: incomingText
+  clientContext[senderId].push({
+    role: "user",
+    parts: [{ text: userText }]
   });
 
-  // تقليص الذاكرة لآخر 12 رسالة لحفظ السرعة والتركيز
-  if (chatContextMemory[senderId].length > 13) {
-    chatContextMemory[senderId] = [
-      chatContextMemory[senderId][0],
-      ...chatContextMemory[senderId].slice(-12)
-    ];
+  if (clientContext[senderId].length > 10) {
+    clientContext[senderId] = clientContext[senderId].slice(-8);
   }
 
-  // نماذج الذكاء الاستشارية الفائقة
-  const models = [
-    'deepseek/deepseek-chat',
-    'meta-llama/llama-3.1-8b-instruct:free',
-    'mistralai/mistral-7b-instruct:free'
-  ];
-
-  for (const model of models) {
-    try {
-      const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: model,
-        messages: chatContextMemory[senderId],
-        max_tokens: 250,
-        temperature: 0.65
-      }, {
-        headers: {
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://al-saad-whatsapp.onrender.com',
-          'X-Title': 'Al-Saad AI Council'
-        },
-        timeout: 8000
-      });
-
-      const reply = res.data?.choices?.[0]?.message?.content?.trim();
-      if (reply) {
-        chatContextMemory[senderId].push({
-          role: 'assistant',
-          content: reply
-        });
-        return reply;
-      }
-    } catch (e) {
-      console.log(`Council model ${model} busy, switching...`);
+  const payload = {
+    system_instruction: {
+      parts: [{ text: COUNCIL_BRAIN_DIRECTIVE }]
+    },
+    contents: clientContext[senderId],
+    generationConfig: {
+      temperature: 0.65,
+      maxOutputTokens: 250
     }
+  };
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+
+  try {
+    const res = await axios.post(endpoint, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 6000
+    });
+
+    const reply = res.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (reply) {
+      clientContext[senderId].push({
+        role: "model",
+        parts: [{ text: reply }]
+      });
+      return reply;
+    }
+  } catch (err) {
+    console.error('[Cable Timeout/Error]: Switching to Council instant fallback...');
   }
 
-  // استجابة المجلس التلقائية الطارئة عند انقطاع الشبكة
-  return "يا هلا ومسهلا بك يا غالي 🌿 معك سعود، أبشر بسعدك شغال أرتب لك أفضل حل لواتسابك يخدم مجالك ويوفر وقتك. تفضل بسؤالك ونخدمك بأحسن ترتيب 🤝";
+  // خط الدفاع اللحظي من المجلس في حال تعثر الكيبل مؤقتاً
+  const lower = userText.toLowerCase();
+  if (lower.includes('مطعم') || lower.includes('أكل') || lower.includes('منيو') || lower.includes('كافيه')) {
+    return "يا هلا ومسهلا بأهل المطاعم! 🌿\nلمطعمكم بنركب بالواتساب:\n1. إرسال المنيو بالصور والأسعار في أول ثانية للزبون.\n2. استقبال طلبات التوصيل والاستلام مع تحديد موقع العميل آلياً.\n3. تنظيم حجوزات الطاولات وقت الذروة والزحمة وأنت مرتاح.\nتخيل ما يضيع عليك ولا طلب حتى وقت ضغط الشغل أو بعد الإغلاق! تحب نجهز لك تجربة خاصة بمنيو مطعمك؟";
+  }
+
+  return "يا هلا ومسهلا بك يا غالي 🌿 معك أخوك سعود من السعد لحلول الأعمال. نركب لك نظام بالواتساب يرد على زباينك في أول ثانية، يرسل الصور والأسعار والموقع ويسجل الطلبات حتى بعد نهاية الدوام. تفضل بسؤالك ومجال نشاطك وسنخدمك بأحسن ترتيب 🤝";
 }
 
 async function startWhatsApp() {
@@ -142,12 +134,12 @@ async function startWhatsApp() {
     } else if (connection === 'open') {
       isConnected = true;
       currentQR = null;
-      connectedPhone = sock.user?.id ? sock.user.id.split(':')[0] : '966596096620';
+      connectedPhone = sock.user?.id ? sock.user.id.split(':')[0] : OFFICIAL_PHONE;
       console.log('✅ متصل ومستقر على واتساب:', connectedPhone);
     }
   });
 
-  // الاستماع الشامل لمحادثات العملاء
+  // استقبال الرسائل وإرسال الرد المعتمد من عقول المجلس الستة
   sock.ev.on('messages.upsert', async (m) => {
     try {
       if (!m.messages || !m.messages.length) return;
@@ -158,36 +150,36 @@ async function startWhatsApp() {
         const sender = msg.key.remoteJid;
         if (!sender || sender.includes('@g.us') || sender.includes('broadcast')) continue;
 
-        const text = (
-          msg.message?.conversation || 
-          msg.message?.extendedTextMessage?.text || 
-          msg.message?.imageMessage?.caption || 
-          ''
-        ).trim();
+        const rawText = msg.message?.conversation || 
+                         msg.message?.extendedTextMessage?.text || 
+                         msg.message?.imageMessage?.caption || 
+                         '';
 
+        const text = rawText.trim();
         if (!text) continue;
 
-        console.log(`[وارد من العميل ${sender}]: ${text}`);
+        console.log(`[وارد من ${sender}]: ${text}`);
 
-        // محاكاة الكتابة البشرية لطمأنة العميل
+        // تشغيل مؤشر الكتابة البشري
         try {
           await sock.sendPresenceUpdate('composing', sender);
         } catch (e) {}
 
-        // تشغيل عقول المجلس الستة لتحليل الرسالة وتوليد الرد البشري
-        const reply = await getCouncilDeliberationReply(sender, text);
+        // توليد الرد عبر مداولات المجلس من خلال الكيبل السريع
+        const reply = await getCouncilResponseViaCable(sender, text);
 
         try {
           await sock.sendPresenceUpdate('paused', sender);
         } catch (e) {}
 
+        // إرسال الرسالة للعميل
         if (sock && isConnected) {
           await sock.sendMessage(sender, { text: reply });
-          console.log(`[رد المجلس باسم سعود]: ${reply}`);
+          console.log(`[رد سعود المعتمد]: ${reply}`);
         }
       }
     } catch (err) {
-      console.error('Upsert Error:', err.message);
+      console.error('Critical Message Processing Error:', err.message);
     }
   });
 }
@@ -199,10 +191,10 @@ app.get('/', (req, res) => {
     <html lang="ar" dir="rtl">
     <head>
       <meta charset="UTF-8">
-      <title>غرفة تحكم السعد | محرك المجلس الاستشاري</title>
+      <title>غرفة قيادة السعد | المجلس الاستشاري</title>
       <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@700;900&display=swap" rel="stylesheet">
       <style>
-        body { background:#070a12; color:#fff; font-family:'Tajawal',sans-serif; text-align:center; padding:35px 20px; }
+        body { background:#070a12; color:#fff; font-family:'Tajawal',sans-serif; text-align:center; padding:35px 20px; margin:0; }
         .box { background:#0f172a; border:1px solid #1e293b; max-width:480px; margin:auto; padding:25px; border-radius:20px; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
         .btn { display:inline-block; padding:14px 28px; border-radius:12px; font-weight:900; font-size:16px; text-decoration:none; margin-top:15px; }
         .btn-green { background:#10b981; color:#fff; }
@@ -214,8 +206,8 @@ app.get('/', (req, res) => {
         <h2 style="color:#10b981; margin:0 0 10px;">🌿 السعد لحلول الأعمال</h2>
         ${isConnected ? `
           <div style="font-size:45px;">🟢</div>
-          <h3 style="color:#34d399;">عقول المجلس الستة تعمل وتدير المحادثات 24/7!</h3>
-          <p style="color:#9ca3af;">الرقم النشط: +${connectedPhone}</p>
+          <h3 style="color:#34d399;">المجلس الاستشاري يقود واتساب السعد بنجاح 24/7!</h3>
+          <p style="color:#9ca3af;">الرقم الرسمي المعتمد: +${OFFICIAL_PHONE}</p>
           <a href="/send_test" class="btn btn-green">🎯 إرسال رسالة العرض لجوال راكان الآن</a>
         ` : `
           <h3 style="color:#f59e0b;">🟡 بانتظار مسح الرمز</h3>
@@ -231,7 +223,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// صفحة المعاينة
+// صفحة المعاينة الرسمية للعملاء بالرقم المعتمد
 app.get('/demo', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -280,7 +272,7 @@ app.get('/demo', (req, res) => {
           <div style="font-size:13px; color:#9ca3af; margin-top:5px;">✅ دفع لمرة واحدة وبدون أي اشتراكات شهرية إلزامية تثقل عليك!</div>
         </div>
 
-        <a href="https://wa.me/966596096620?text=أهلاً،%20اطلعت%20على%20صفحة%20المعاينة%20وأرغب%20في%20معرفة%20تفاصيل%20التركيب%20لواتسابي" class="btn-wa">
+        <a href="https://wa.me/${OFFICIAL_PHONE}?text=أهلاً،%20اطلعت%20على%20صفحة%20المعاينة%20وأرغب%20في%20معرفة%20تفاصيل%20التركيب%20لواتسابي" class="btn-wa">
           💬 اضغط هنا لمراسلتنا وتحديد الباقة المناسبة لك
         </a>
       </div>
@@ -289,7 +281,7 @@ app.get('/demo', (req, res) => {
   `);
 });
 
-// إرسال تجريبي لجوال راكان
+// إرسال رسالة الاستقطاب المعتمدة لجوال راكان
 app.get('/send_test', async (req, res) => {
   if (!isConnected || !sock) return res.send('❌ الواتساب غير متصل بعد');
   const jid = '966548757876@s.whatsapp.net';
