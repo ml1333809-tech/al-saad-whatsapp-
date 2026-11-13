@@ -2,7 +2,7 @@
 /**
  * محرك واتساب السحابي المفتوح المصدر (Baileys Cloud Engine)
  * السعد لحلول الأعمال - إشراف: المهندس راكان
- * غير محدود المحادثات، مجاني 100% للأبد، ويعمل في السحاب 24/7 دون الحاجة لتشغيل الكمبيوتر.
+ * غير محدود المحادثات، مجاني 100% للأبد، ويعمل في السحاب 24/7.
  */
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
@@ -23,6 +23,29 @@ let sock = null;
 let currentQR = null;
 let connectionState = 'جاري التهيئة...';
 let connectedPhone = null;
+
+// حالة حملة الإرسال الجماعي الآمن
+let campaignStatus = {
+  running: false,
+  currentIndex: 0,
+  total: 0,
+  sentCount: 0,
+  logs: []
+};
+
+// قائمة الشركات المستهدفة (من ضمنهم م. راكان للتأكيد الحي)
+const TARGET_LEADS = [
+  { id: 1, name: "مؤسسة م. راكان للتجارة والديكور", phone: "966548757876", category: "مقاولات وديكور" },
+  { id: 2, name: "مكتب ماجد الصقعبي للعقارات", phone: "966550001141", category: "عقارات ووساطة" },
+  { id: 3, name: "مكتب الآلية للعقارات وإدارة الأملاك", phone: "966554873777", category: "عقارات وإدارة أملاك" },
+  { id: 4, name: "مكتب الخيار الصحيح للخدمات العقارية", phone: "966546444785", category: "عقارات وخدمات" },
+  { id: 5, name: "مؤسسة الأفق لتأجير المعدات", phone: "966504221199", category: "معدات ومقاولات" },
+  { id: 6, name: "شركة ركائز البناء للمقاولات", phone: "966532299881", category: "مقاولات وبناء" },
+  { id: 7, name: "مكتب المزن للاستقدام", phone: "966555123987", category: "خدمات واستقدام" },
+  { id: 8, name: "مركز لمسات الفخامة لصيانة السيارات", phone: "966509876543", category: "سيارات وصيانة" },
+  { id: 9, name: "مؤسسة الدقة العالية لتقنية المعلومات", phone: "966567891234", category: "تقنية واتصالات" },
+  { id: 10, name: "مطعم ومقهى نكهة الأصالة", phone: "966541122334", category: "مطاعم وضيافة" }
+];
 
 const SAUDI_SYSTEM_PROMPT = `
 أنت 'سعود' - ممثل خدمة العملاء والمبيعات لـ 'السعد لحلول الأعمال'.
@@ -65,6 +88,20 @@ async function getAIReply(userMessage, senderPhone) {
     console.error('[AI Engine Error]:', err.message);
   }
   return "يا هلا ومسهلا بك في السعد لحلول الأعمال! 🌿 تفضل بكتابة استفسارك أو طلبك وسنخدمك فوراً بأفضل ترتيب.";
+}
+
+// دالة لتوليد رسالة العرض المخصصة لكل نشاط تجاري
+function generatePitch(lead) {
+  return `السلام عليكم ورحمة الله وبركاته، مساكم الله بالخير يا غالي في ${lead.name} 🌿
+
+نحن في السعد لحلول الأعمال نركب لكم موظفاً ذكياً على رقم واتسابكم:
+⚡ يرد بالثانية الواحدة 24 ساعة دون توقف.
+📸 يقفل مبيعاتكم ويرسل تفاصيل الخدمات والأسعار لعملائكم.
+📅 يحجز وينظم المواعيد والطلبات ويوفر وقت الإدارة.
+
+💡 وأي فكرة تقنية أو أداة خاصة حاب نحولها لتطبيق أو برنامج يسهّل إدارة أعمالك، جاهزين نبرمجها لك بأفضل سعر وتسهيلات مرنة تناسبكم.
+
+أخوكم سعود | السعد لحلول الأعمال 🌿`;
 }
 
 // تشغيل محرك الواتساب Baileys
@@ -135,7 +172,50 @@ async function startWhatsApp() {
   });
 }
 
-// لوحة تحكم السيرفر السحابي
+// محرك الإرسال المتتابع مع فاصل زمني ضد الحظر
+async function runCampaign() {
+  if (campaignStatus.running) return;
+  campaignStatus.running = true;
+  campaignStatus.total = TARGET_LEADS.length;
+  campaignStatus.sentCount = 0;
+  campaignStatus.logs.push(`[${new Date().toLocaleTimeString('ar-SA')}] تم بدء حملة الإرسال الفعلي لـ ${TARGET_LEADS.length} شركة.`);
+
+  for (let i = 0; i < TARGET_LEADS.length; i++) {
+    const lead = TARGET_LEADS[i];
+    campaignStatus.currentIndex = i + 1;
+    const jid = `${lead.phone}@s.whatsapp.net`;
+    const pitch = generatePitch(lead);
+
+    try {
+      if (sock) {
+        await sock.sendMessage(jid, { text: pitch });
+        campaignStatus.sentCount++;
+        const logMsg = `✅ تم الإرسال بنجاح إلى: ${lead.name} (${lead.phone})`;
+        console.log(logMsg);
+        campaignStatus.logs.unshift(`[${new Date().toLocaleTimeString('ar-SA')}] ${logMsg}`);
+      } else {
+        campaignStatus.logs.unshift(`❌ السيرفر غير متصل بواتساب`);
+        break;
+      }
+    } catch (err) {
+      const errMsg = `❌ خطأ في الإرسال إلى ${lead.name}: ${err.message}`;
+      console.error(errMsg);
+      campaignStatus.logs.unshift(`[${new Date().toLocaleTimeString('ar-SA')}] ${errMsg}`);
+    }
+
+    // فاصل أمان بشري عشوائي بين 25 إلى 45 ثانية لتفادي الحظر
+    if (i < TARGET_LEADS.length - 1) {
+      const delay = Math.floor(Math.random() * 20000) + 25000;
+      campaignStatus.logs.unshift(`⏳ انتظام الأمان ومكافحة الحظر: انتظار ${Math.round(delay/1000)} ثانية قبل الشركة التالية...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  campaignStatus.running = false;
+  campaignStatus.logs.unshift(`🎉 اكتملت حملة الإرسال بنجاح!`);
+}
+
+// لوحة التحكم المباشرة
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -152,88 +232,183 @@ app.get('/', (req, res) => {
           color: #f3f4f6;
           font-family: 'Tajawal', sans-serif;
           min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
           margin: 0;
-          padding: 20px;
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+        .container {
+          max-width: 800px;
+          width: 100%;
         }
         .card {
           background: rgba(15, 22, 36, 0.9);
           border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 24px;
-          padding: 32px;
-          max-width: 480px;
-          width: 100%;
-          text-align: center;
-          box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+          border-radius: 20px;
+          padding: 24px;
+          margin-bottom: 20px;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
         .badge {
           display: inline-block;
           background: rgba(16, 185, 129, 0.15);
           border: 1px solid #10b981;
           color: #34d399;
-          padding: 6px 16px;
+          padding: 4px 14px;
           border-radius: 50px;
           font-size: 13px;
           font-weight: 700;
-          margin-bottom: 16px;
         }
-        h1 { font-size: 22px; font-weight: 900; margin-bottom: 8px; }
-        p { font-size: 14px; color: #9ca3af; line-height: 1.6; margin-bottom: 24px; }
-        .qr-box {
-          background: #fff;
-          padding: 16px;
-          border-radius: 16px;
+        h1 { font-size: 22px; font-weight: 900; margin: 12px 0 6px; }
+        p { font-size: 14px; color: #9ca3af; margin: 0 0 16px; }
+        .btn-green {
           display: inline-block;
-          margin-bottom: 20px;
-        }
-        .qr-box img { display: block; max-width: 250px; height: auto; }
-        .status-box {
-          background: rgba(255,255,255,0.04);
-          padding: 12px;
+          background: linear-gradient(135deg, #10b981, #059669);
+          color: #fff;
+          padding: 14px 28px;
           border-radius: 12px;
-          font-size: 13.5px;
-          font-weight: 700;
-          color: #fbbf24;
+          text-decoration: none;
+          font-size: 16px;
+          font-weight: 900;
+          border: none;
+          cursor: pointer;
+          transition: transform 0.2s, box-shadow 0.2s;
         }
+        .btn-green:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+        .btn-blue {
+          display: inline-block;
+          background: #3b82f6;
+          color: #fff;
+          padding: 10px 20px;
+          border-radius: 10px;
+          text-decoration: none;
+          font-weight: 700;
+          font-size: 14px;
+          margin-left: 10px;
+        }
+        .log-box {
+          background: rgba(0,0,0,0.4);
+          border: 1px solid rgba(255,255,255,0.05);
+          border-radius: 12px;
+          padding: 14px;
+          height: 220px;
+          overflow-y: auto;
+          font-size: 13px;
+          color: #d1d5db;
+          line-height: 1.8;
+          font-family: monospace;
+          text-align: left;
+          direction: ltr;
+        }
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          font-weight: 700;
+          color: #10b981;
+          margin-bottom: 12px;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 10px;
+          font-size: 13.5px;
+        }
+        th, td {
+          padding: 10px;
+          text-align: right;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        th { color: #9ca3af; font-weight: 700; }
       </style>
     </head>
     <body>
-      <div class="card">
-        <div class="badge">🌿 السعد لحلول الأعمال • محرك سحابي 24/7</div>
-        <h1>ربط الواتساب السحابي المفتوح المصدر</h1>
-        <p>امسح الرمز لمرة واحدة من تطبيق WhatsApp Business في الآيفون، وسيتولى السيرفر السحابي العمل والرد تلقائياً حتى لو كان لابتوبك مطفأً!</p>
-        
-        ${currentQR ? `
-          <div class="qr-box">
-            <img src="${currentQR}" alt="WhatsApp QR Code">
+      <div class="container">
+        <div class="card" style="text-align: center;">
+          <div class="badge">🌿 السعد لحلول الأعمال • محرك سحابي 24/7</div>
+          <h1>غرفة التحكم بالإرسال الفعلي المباشر</h1>
+          <p>المحرك السحابي متصل بجوالك WhatsApp Business ويعمل ذاتياً 🚀</p>
+          
+          <div class="status-pill">
+            <span>🟢</span> <span>${connectionState} ${connectedPhone ? `(+${connectedPhone})` : ''}</span>
           </div>
-          <div class="status-box">📱 افتح الآيفون: الإعدادات ➔ الأجهزة المرتبطة ➔ امسح الرمز أعلاه</div>
-        ` : `
-          <div style="font-size: 60px; margin: 20px 0;">✅</div>
-          <div class="status-box" style="color: #34d399;">
-            ${connectionState}
-            ${connectedPhone ? `<br><small style="color:#9ca3af;">الرقم المتصل: +${connectedPhone}</small>` : ''}
+          
+          <div style="margin-top: 15px;">
+            <a href="/send_test_rakan" class="btn-blue">🎯 إرسال فوري لجوال م. راكان للتجربة</a>
+            <a href="/start_campaign" class="btn-green">🚀 إطلاق الإرسال الفعلي لـ 10 شركات مستهدفة</a>
           </div>
-        `}
+        </div>
+
+        <div class="card">
+          <h2 style="font-size: 17px; margin: 0 0 12px;">📊 سجل الإرسال الفعلي وحالة الأمان:</h2>
+          <div class="log-box">
+            ${campaignStatus.logs.length ? campaignStatus.logs.map(l => `<div>${l}</div>`).join('') : '<div>بانتظار بدء الإرسال...</div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 style="font-size: 17px; margin: 0 0 12px;">📋 قائمة الشركات المستهدفة في هذه الدفعة:</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>الاسم التجاري</th>
+                <th>النشاط</th>
+                <th>رقم الواتساب</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${TARGET_LEADS.map(l => `
+                <tr>
+                  <td>${l.id}</td>
+                  <td>${l.name}</td>
+                  <td>${l.category}</td>
+                  <td style="direction:ltr; text-align:left;">+${l.phone}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
-      <script>
-        // تحديث تلقائي للصفحة عند تغير الحالة
-        setTimeout(() => window.location.reload(), 15000);
-      </script>
     </body>
     </html>
   `);
 });
 
-// تشغيل الخادم
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 محرك Baileys السحابي يعمل الآن على المنفذ ${PORT}`);
-  console.log(`👉 افتح الرابط في المتصفح لمسح كود الـ QR:`);
-  console.log(`   http://localhost:${PORT}`);
-  console.log(`=======================================================`);
-  startWhatsApp();
+// إرسال تجريبي فوري لجوال م. راكان
+app.get('/send_test_rakan', async (req, res) => {
+  if (!sock) return res.status(500).send('❌ السيرفر غير متصل بالواتساب بعد');
+  const targetJid = '966548757876@s.whatsapp.net';
+  const pitchText = generatePitch(TARGET_LEADS[0]);
+
+  try {
+    await sock.sendMessage(targetJid, { text: pitchText });
+    res.send(`
+      <div style="text-align:center; font-family:'Tajawal',sans-serif; margin-top:80px; direction:rtl;">
+        <h1 style="color:#10b981;">✅ تم إرسال الرسالة إلى جوالك 0548757876 بنجاح!</h1>
+        <p>افتح الواتساب بجوالك الآن وشف الرسالة، ورد عليها عشان سعود يرد عليك آلياً 🌿</p>
+        <a href="/" style="display:inline-block; padding:10px 20px; background:#10b981; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold;">الرجوع للوحة التحكم</a>
+      </div>
+    `);
+  } catch (err) {
+    res.status(500).send('❌ حدث خطأ أثناء الإرسال: ' + err.message);
+  }
 });
 
+// بدء حملة الإرسال الفعلي
+app.get('/start_campaign', (req, res) => {
+  if (!sock) return res.status(500).send('❌ السيرفر غير متصل بالواتساب بعد');
+  runCampaign();
+  res.redirect('/');
+});
+
+// تشغيل الخادم
+app.listen(PORT, () => {
+  console.log(`محرك Baileys السحابي يعمل على المنفذ ${PORT}`);
+  startWhatsApp();
+});
