@@ -1,11 +1,11 @@
 // -*- coding: utf-8 -*-
 /**
- * محرك واتساب الذكي فائق السرعة (Ultra-Fast Council AI Engine)
+ * محرك واتساب الذكي فائق السرعة والموثوقية (Guaranteed Delivery Engine)
  * السعد لحلول الأعمال - تحت إشراف المهندس راكان
- * المجلس الاستشاري: طارق المعماري، د. إبراهيم، كلود، المحقق راشد، فهد، سارة
+ * المجلس الاستشاري: طارق، د. إبراهيم، كلود، راشد، فهد، سارة
  */
 
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
 const QRCode = require('qrcode');
 const axios = require('axios');
@@ -23,68 +23,68 @@ let currentQR = null;
 let isConnected = false;
 let connectedPhone = null;
 
-// توجيهات المجلس الاستشاري المركزة (عقل سعود)
-const COUNCIL_SYSTEM_PROMPT = `
-أنت 'سعود' - مستشار المبيعات وخدمة العملاء في 'السعد لحلول الأعمال'.
-مرجعيتك قرارات المجلس الاستشاري:
-1. الشخصية: سعودي، راقي، ودود، يتحدث باللهجة السعودية البيضاء الهادئة، ذكي في البيع والتفاوض.
-2. خدمتنا الأساسية: نركب للمحلات والشركات والمكاتب نظام ردود ذكية بالواتساب يرد على زباينهم في أول ثانية 24/7، يرسل الصور والكتالوج والموقع ويحجز الطلبات حتى وصاحب العمل نايم أو بعد نهاية الدوام.
-3. استراتيجية السعر (د. إبراهيم): لا تذكر سعراً ثابتاً في أول رسالة! بيّن أن السعر ميسر جداً ومرن لمرة واحدة وبدون أي اشتراك شهري معقد، واسأل العميل بلطافة عن حجم نشاطه لنعطيه أفضل عرض يناسب ميزانيته.
-4. أسلوب الصياغة (سارة): جمل قصيرة جداً (سطرين أو 3)، واضحة ومباشرة وتفتح شهية العميل للتواصل. ممنوع منعاً باتاً ذكر كلمات تقنية مثل: "ذكاء اصطناعي، خوارزمية، روبوت، مجلس".
-`;
+// عقل المجلس الاستشاري المدمج للردود البيعية المباشرة
+function getCouncilInstantReply(text) {
+  const lower = text.toLowerCase().trim();
 
-// محرك المعالجة الذكي فائق السرعة
-async function generateCouncilReply(userMessage) {
-  const text = userMessage.trim();
-
-  // فحص ذكي وسريع للحالات المباشرة (< 50ms) لضمان عدم الانتظار
-  const lower = text.toLowerCase();
-  
-  // التحية والترحيب
-  if (/^(سلام|السلام عليكم|مرحبا|هلا|مساء الخير|صباح الخير)/.test(lower)) {
-    return "وعليكم السلام ورحمة الله وبركاته! يا هلا ومسهلا بك يا غالي 🌿 معك أخوك سعود من السعد لحلول الأعمال. نركب لك نظام بالواتساب يرد على زباينك 24 ساعة وما يضيع عليك أي زبون. تفضل بسؤالك ومجال نشاطك وأبشر بسعدك.";
+  // 1. التحيات والترحيب
+  if (lower.includes('سلام') || lower.includes('مرحبا') || lower.includes('هلا') || lower.includes('مساء') || lower.includes('صباح') || lower.includes('يا هلا')) {
+    return "وعليكم السلام ورحمة الله وبركاته! يا هلا ومسهلا بك يا غالي 🌿 معك أخوك سعود من السعد لحلول الأعمال. نركب لك نظام بالواتساب يرد على زباينك 24 ساعة وما يضيع عليك أي زبون. تفضل بمجال نشاطك واستفسارك وأبشر بعزك.";
   }
 
-  // الاستفسار عن الأسعار
-  if (lower.includes('سعر') || lower.includes('كم') || lower.includes('تكلف') || lower.includes('بكم') || lower.includes('اسعار')) {
-    return "يا هلا ومسهلا بك يا غالي 🌿 أسعارنا ميسرة جداً وتعتمد على حجم متطلبات نشاطك، تركيب لمرة واحدة بدون أي اشتراك شهري يثقل عليك!\n\nوش مجال نشاطك بالضبط عشان أرتب لك الترتيب المناسب لميزانيتك ونخدمك بأفضل سعر؟";
+  // 2. السؤال عن السعر والتكلفة (د. إبراهيم: بدون حرق السعر مع إبراز المرونة)
+  if (lower.includes('سعر') || lower.includes('كم') || lower.includes('تكلف') || lower.includes('بكم') || lower.includes('اسعار') || lower.includes('فلوس') || lower.includes('قيمة')) {
+    return "يا هلا ومسهلا بك يا غالي 🌿 أسعارنا ميسرة جداً وتعتمد على حجم متطلبات نشاطك، تركيب لمرة واحدة بدون أي اشتراك شهري يثقل عليك!\n\nوش مجال نشاطك بالضبط عشان أرتب لك أفضل باقة تناسب ميزانيتك ونخدمك بأفضل سعر؟";
   }
 
-  // الموافقة وطلب التفاصيل أو المعاينة
-  if (lower.includes('أبشر') || lower.includes('تم') || lower.includes('تفاصيل') || lower.includes('كيف') || lower.includes('شرح')) {
+  // 3. طلب الشرح والتفاصيل والمعاينة
+  if (lower.includes('أبشر') || lower.includes('تم') || lower.includes('تفاصيل') || lower.includes('كيف') || lower.includes('شرح') || lower.includes('فيديو') || lower.includes('رابط') || lower.includes('معاينة')) {
     return "تبشر بالجنة والرضا يا غالي 🤝 تقدر تشوف فيديو الشرح وتجربة النظام الحية من رابطنا الرسمي:\nhttps://al-saad-whatsapp.onrender.com/demo\n\nوعطني اسم محلك أو مكتبك ونجهز لك الترتيب فوراً.";
   }
 
-  // استدعاء الذكاء الاصطناعي مع Timeout سريع جداً (3 ثوانٍ فقط)
+  // 4. التجربة والضمان والأمان
+  if (lower.includes('ضمان') || lower.includes('أمان') || lower.includes('تجربة') || lower.includes('اجرب') || lower.includes('جرب')) {
+    return "أبشر بعزك يا غالي! النظام آمن 100% ويعمل بربط رسمي على رقمك بدون برامج خارجية وبدون أي كلمات مرور، وتقدر تشوف طريقة عمله كاملة من رابطنا:\nhttps://al-saad-whatsapp.onrender.com/demo\n\nتفضل باسم مجالك لنبدأ لك الإعداد فوراً.";
+  }
+
+  // 5. أي سؤال آخر عام
+  return "يا هلا بك في السعد لحلول الأعمال 🌿 أبشر بعزك، نركب لك موظف واتساب ذكي يرد على زباينك بالثانية الواحدة حتى وقت انشغالك أو بعد الدوام. تفضل بطلبك أو استفسارك وسنخدمك بأحسن ترتيب 🤝";
+}
+
+// محرك الذكاء الاصطناعي مع ضمان الإرسال الحتمي
+async function resolveReplyWithAI(userText) {
+  // محاولة الذكاء الاصطناعي الخارجي مع مهلة صارمة (1.5 ثانية فقط!)
   try {
-    const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+    const aiPromise = axios.post('https://openrouter.ai/api/v1/chat/completions', {
       model: 'mistralai/mistral-7b-instruct:free',
       messages: [
-        { role: 'system', content: COUNCIL_SYSTEM_PROMPT },
-        { role: 'user', content: text }
+        {
+          role: 'system',
+          content: "أنت 'سعود' من السعد لحلول الأعمال بالسعودية. تتحدث باللهجة السعودية البيضاء الودودة. نركب نظام ردود واتساب 24/7 للمحلات والشركات. الأسعار ميسرة وتعتمد على حجم النشاط بدون اشتراكات شهرية. ردك في سطرين فقط باختصار ولطافة بدون ذكر كلمات تقنية."
+        },
+        { role: 'user', content: userText }
       ],
-      max_tokens: 150,
+      max_tokens: 120,
       temperature: 0.6
     }, {
       headers: {
         'Authorization': 'Bearer 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',
         'Content-Type': 'application/json'
       },
-      timeout: 3500
+      timeout: 1800
     });
 
+    const res = await aiPromise;
     if (res.data?.choices?.[0]?.message?.content) {
       return res.data.choices[0].message.content.trim();
     }
-  } catch (err) {
-    console.log('[Fast Fallback Activated]:', err.message);
+  } catch (e) {
+    // في حال بطء أو فشل الاتصال بالإنترنت، ننتقل فوراً إلى عقل المجلس المدمج فائق السرعة
   }
 
-  // رد سياقي ذكي في حال تأخر الإنترنت الخارجي
-  return "يا هلا بك في السعد لحلول الأعمال 🌿 أبشر بعزك، نركب لك نظام ردود بالواتساب يمسك زباينك بالثانية الواحدة ويوفر وقتك. تفضل بطلبك أو استفسارك وسنخدمك بأحسن ترتيب.";
+  return getCouncilInstantReply(userText);
 }
 
-// تشغيل محرك الواتساب
 async function startWhatsApp() {
   const authFolder = path.join(__dirname, 'auth_info');
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -119,19 +119,17 @@ async function startWhatsApp() {
     }
   });
 
-  // معالجة الرسائل الواردة بشكل فوري ودقيق
+  // معالجة الرسائل الواردة بإرسال حتمي مضمون
   sock.ev.on('messages.upsert', async (m) => {
     try {
       if (!m.messages || !m.messages.length) return;
 
       for (const msg of m.messages) {
-        // تجاهل الرسائل الصادرة من نفس الحساب
         if (msg.key.fromMe) continue;
 
         const sender = msg.key.remoteJid;
         if (!sender || sender.includes('@g.us') || sender.includes('broadcast')) continue;
 
-        // استخراج النص من كافة أنواع الرسائل
         const rawText = msg.message?.conversation || 
                          msg.message?.extendedTextMessage?.text || 
                          msg.message?.imageMessage?.caption || 
@@ -140,24 +138,29 @@ async function startWhatsApp() {
         const text = rawText.trim();
         if (!text) continue;
 
-        console.log(`[وارد من ${sender}]: ${text}`);
+        console.log(`[رسالة جديدة واردة من ${sender}]: ${text}`);
 
-        // محاكاة بشرية سريعة: وضع حالة "يكتب الآن..." لطمأنة العميل
+        // إظهار جاري الكتابة لمدة ثانية واحدة
         try {
           await sock.sendPresenceUpdate('composing', sender);
         } catch (e) {}
 
-        // توليد الرد من عقل المجلس
-        const reply = await generateCouncilReply(text);
+        // توليد الرد من عقول المجلس بضمان الإرسال
+        const reply = await resolveReplyWithAI(text);
 
-        // إرسال الرد
+        // إيقاف إشارة الكتابة
+        try {
+          await sock.sendPresenceUpdate('paused', sender);
+        } catch (e) {}
+
+        // إرسال الرسالة كنص مباشر دون اقتباس (لتفادي أي خطأ في بنية الرسالة)
         if (sock && isConnected) {
-          await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-          console.log(`[تم الرد بنجاح]: ${reply}`);
+          await sock.sendMessage(sender, { text: reply });
+          console.log(`[✅ تم إرسال الرد بنجاح]: ${reply}`);
         }
       }
     } catch (err) {
-      console.error('Error handling message:', err.message);
+      console.error('Critical Upsert Error:', err.message);
     }
   });
 }
@@ -201,7 +204,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// صفحة المعاينة الرسمية للعملاء (بدون ذكر السعر لحماية التفاوض)
+// صفحة المعاينة الرسمية
 app.get('/demo', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -273,8 +276,8 @@ app.get('/send_test', async (req, res) => {
   }
 });
 
-process.on('uncaughtException', (err) => console.error('Caught exception:', err.message));
-process.on('unhandledRejection', (reason) => console.error('Unhandled rejection:', reason));
+process.on('uncaughtException', (err) => console.error('Uncaught Exception:', err.message));
+process.on('unhandledRejection', (reason) => console.error('Unhandled Rejection:', reason));
 
 app.listen(PORT, () => {
   console.log(`Server on port ${PORT}`);
