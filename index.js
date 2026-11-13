@@ -1,8 +1,8 @@
 // -*- coding: utf-8 -*-
 /**
  * محرك واتساب السحابي المفتوح المصدر (Baileys Cloud Engine)
- * السعد لحلول الأعمال - إشراف: المهندس راكان
- * مدعوم بعقل المجلس الاستشاري للذكاء الاصطناعي (AI Council Core)
+ * السعد لحلول الأعمال - عقل المجلس الاستشاري
+ * يعمل في السحاب 24/7 دون الحاجة لتشغيل الكمبيوتر نهائياً.
  */
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
@@ -23,27 +23,26 @@ let currentQR = null;
 let isConnected = false;
 let connectedPhone = null;
 
-// عقل المجلس الاستشاري الاستراتيجي (سعود - ممثل السعد لحلول الأعمال)
+// توجيهات المجلس الاستشاري للردود التلقائية (سعود)
 const COUNCIL_BRAIN_PROMPT = `
-أنت 'سعود' - المستشار البيعي وممثل خدمة العملاء لـ 'السعد لحلول الأعمال'.
-مرجعيتك هي: استراتيجيات التسعير المرن، الإقناع الذكي، واللهجة السعودية البيضاء المحترمة والمرحبة جداً (مثل: يا هلا ومسهلا، حياك الله يا غالي، أبشر بعزك، ما تشيل هم).
+أنت 'سعود' من 'السعد لحلول الأعمال'.
+تتكلم بلهجة سعودية دارجة، بسيطة جداً، مفهومة لأي شخص عادي وبدون أي مصطلحات تقنية أو تفلسف.
 
-خدماتنا الحصرية:
-1. تركيب وبرمجة موظف واتساب ذكي بالذكاء الاصطناعي على مدار الساعة (يرد بالثواني، يقفل الصفقات، يحجز المواعيد).
-2. برمجة وتطوير أي تطبيق أو نظام تقني مخصص للعميل لتسهيل إدارة عمله.
+الخدمة اللي نقدمها باختصار وبساطة:
+"نركب لك رد تلقائي على رقم الواتساب حق محلك أو مكتبك، عشان إذا جاك زبون في نص الليل أو وقت انشغالك، الواتساب يرد عليه فوراً، يعطيه الأسعار وموقع المحل وتفاصيل الشغل، وما يضيع عليك ولا زبون!"
 
-سياسة الأسعار والتفاوض (مرونة تامة تناسب الجميع):
-- الباقة الأساسية للمحلات والمكاتب: رسوم إعداد وتركيب لمرة واحدة ميسرة جداً (تبدأ من 250 إلى 500 ريال فقط) بدون أي اشتراكات شهرية معقدة تثقل عليهم.
-- دعم فني وتحديثات عند الطلب برسم رمزي جداً (50 ريال).
-- إمكانية تجربة مجانية أو فحص نظامهم مجاناً لإثبات الكفاءة.
+الأسعار (سهلة وواضحة بدون اشتراك شهري):
+- تركيب وتشغيل كامل لمرة واحدة فقط بـ 290 إلى 390 ريال.
+- بدون أي اشتراك شهري.
+- تجربة مجانية أولاً يشوفها بنفسه إذا حب.
 
-تعليمات الرد الصارمة:
-1. الرد مباشر، ذكي، مختصر، وجذاب جداً (لا تتجاوز 3 أو 4 أسطر).
-2. لا تذكر كلمة 'ذكاء اصطناعي' أو 'مجلس' أو 'روبوت' إطلاقاً، أنت سعود ممثل السعد.
-3. قدّم السعر بمرونة وأنهِ ردك بسؤال يقود للاتفاق أو تحديد موعد.
+شروط الرد:
+1. رد في سطرين أو 3 فقط وبكلام عامي مريح ومباشر.
+2. لا تذكر كلمة 'ذكاء اصطناعي' أو 'مجلس' أو 'خوارزميات'، كلام بيع بسيط من أهل البلد.
+3. إذا سأل عن السعر، جاوبه فوراً بالسعر البسيط.
 `;
 
-// توليد رد الذكاء الاصطناعي المباشر
+// توليد رد المحادثة
 async function getCouncilAIReply(userMessage) {
   try {
     const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
@@ -52,8 +51,8 @@ async function getCouncilAIReply(userMessage) {
         { role: 'system', content: COUNCIL_BRAIN_PROMPT },
         { role: 'user', content: userMessage }
       ],
-      max_tokens: 250,
-      temperature: 0.7
+      max_tokens: 200,
+      temperature: 0.6
     }, {
       headers: {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
@@ -69,15 +68,28 @@ async function getCouncilAIReply(userMessage) {
     console.error('[Council AI Error]:', err.message);
   }
 
-  // رد استراتيجي ذكي احتياطي من صلب قرارات المجلس في حال تعثر الشبكة
+  // رد مباشر احتياطي في حال بطء الشبكة
   const msg = userMessage.toLowerCase();
-  if (msg.includes('سعر') || msg.includes('كم') || msg.includes('تكلف') || msg.includes('اسعار')) {
-    return "يا هلا ومسهلا بك يا غالي 🌿\n\nباقاتنا ميسرة جداً ومرنة؛ الإعداد والتركيب لمرة واحدة يبدأ من 290 إلى 450 ريال فقط بدون أي اشتراكات شهرية إلزامية!\n\nيناسبكم نجهز لكم نسخة تجريبية تشوف أداءها بنفسك قبل أي التزام؟";
+  if (msg.includes('سعر') || msg.includes('كم') || msg.includes('تكلف') || msg.includes('اسعار') || msg.includes('بكم')) {
+    return "يا هلا ومسهلا بك يا غالي 🌿\nالتركيب وتجهيز الردود بالكامل بـ 290 ريال لمرة واحدة فقط، وما فيه أي اشتراك شهري يثقل عليك!\n\nتحب نسوي لك تجربة تشوفها بنفسك على رقمك أول؟";
   }
-  return "أهلاً ومرحباً بك في السعد لحلول الأعمال 🌿 أبشر بعزك، معك أخوك سعود. تفضل باستفسارك ونرتب لك أفضل نظام واتساب يخدم نشاطك بأفضل سعر وتسهيلات تناسبك.";
+  return "يا هلا بك في السعد لحلول الأعمال 🌿 نركب لك نظام ردود بالواتساب يرد على زباينك 24 ساعة وما يضيع عليك أي زبون. تفضل بسؤالك وأبشر بعزك.";
 }
 
-// تشغيل محرك واتساب
+// نص رسالة الاستقطاب البسيطة والواضحة جداً (صياغة سارة ود. إبراهيم)
+const SIMPLE_PITCH = `السلام عليكم ورحمة الله وبركاته، مساك الله بالخير يا غالي 🌿
+
+كم زبون يراسلك بالواتساب وأنت مشغول أو نايم ويروح لغيرك؟
+
+حنا في السعد نركب لك في واتساب محلك أو مكتبك نظام يرد على الزباين فوراً بأول ثانية:
+يعطيهم الأسعار، يرسل لهم الصور والموقع، ويسجل طلباتهم حتى وأنت نايم.
+
+والسعر بسيط جداً لمرة واحدة بدون أي اشتراك شهري معقد!
+
+إذا ودك نسوي لك تجربة سريعة على رقمك تشوفها بعينك، رد علي بكلمة (تم) وأبشر بعزك 🤝
+
+أخوك سعود | السعد لحلول الأعمال`;
+
 async function startWhatsApp() {
   const authFolder = path.join(__dirname, 'auth_info');
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -110,31 +122,25 @@ async function startWhatsApp() {
     }
   });
 
-  // الاستماع الشامل لكافة أنواع الرسائل الواردة
+  // الاستماع الشامل لكافة الرسائل والرد عليها فوراً
   sock.ev.on('messages.upsert', async (m) => {
     if (!m.messages || !m.messages.length) return;
 
     for (const msg of m.messages) {
-      // تجاهل الرسائل الصادرة من نفس الرقم
       if (msg.key.fromMe) continue;
 
       const sender = msg.key.remoteJid;
       if (!sender || sender.includes('@g.us') || sender.includes('broadcast')) continue;
 
-      // قراءة نص الرسالة مهما كان نوعها
       const text = msg.message?.conversation || 
                    msg.message?.extendedTextMessage?.text || 
                    msg.message?.imageMessage?.caption || '';
 
       if (text.trim()) {
         console.log(`[رسالة جديدة من ${sender}]: ${text}`);
-
-        // توليد الرد من عقل المجلس
         const reply = await getCouncilAIReply(text);
         console.log(`[رد سعود إلى ${sender}]: ${reply}`);
-
-        // إرسال الرد فوراً
-        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+        await sock.sendMessage(sender, { text: reply });
       }
     }
   });
@@ -147,7 +153,7 @@ app.get('/', (req, res) => {
     <html lang="ar" dir="rtl">
     <head>
       <meta charset="UTF-8">
-      <title>محرك السعد السحابي | الذكاء الاصطناعي</title>
+      <title>محرك السعد السحابي</title>
       <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@700;900&display=swap" rel="stylesheet">
       <style>
         body { background:#0a0e17; color:#fff; font-family:'Tajawal',sans-serif; text-align:center; padding:40px 20px; }
@@ -160,23 +166,22 @@ app.get('/', (req, res) => {
       <div class="box">
         <h2 style="color:#10b981; margin-top:0;">🌿 السعد لحلول الأعمال</h2>
         <div style="font-size:50px;">🚀</div>
-        <h3 style="color:#34d399;">عقل سعود ومحرك الردود التلقائية يعمل الآن!</h3>
-        <p style="color:#9ca3af;">متصل برقمك: +${connectedPhone || '966596096620'}</p>
-        <a href="/send_test_rakan" class="btn btn-blue">🎯 إرسال رسالة العرض لجوال راكان</a>
+        <h3 style="color:#34d399;">المحرك السحابي متصل بنجاح ويعمل 24/7</h3>
+        <p style="color:#9ca3af;">الرقم النشط: +${connectedPhone || '966596096620'}</p>
+        <a href="/send_test_rakan" class="btn btn-blue">🎯 إرسال الرسالة البسيطة لجوالك للتجربة</a>
       </div>
     </body>
     </html>
   `);
 });
 
-// إرسال تجريبي لجوال راكان
+// إرسال تجريبي فوري لجوال راكان
 app.get('/send_test_rakan', async (req, res) => {
   if (!sock) return res.send('❌ المحرك غير متصل');
   const jid = '966548757876@s.whatsapp.net';
-  const text = `السلام عليكم ورحمة الله وبركاته، مساكم الله بالخير يا غالي في مؤسسة م. راكان للتجارة والديكور 🌿\n\nنحن في السعد لحلول الأعمال نركب لكم موظفاً ذكياً على رقم واتسابكم:\n⚡ يرد بالثانية الواحدة 24 ساعة دون توقف.\n📸 يقفل مبيعاتكم ويرسل تفاصيل الخدمات والأسعار لعملائكم.\n📅 يحجز وينظم المواعيد والطلبات ويوفر وقت الإدارة.\n\n💡 وأي فكرة تقنية حاب نحولها لتطبيق يسهّل إدارة أعمالك، جاهزين نبرمجها لك بأفضل سعر وتسهيلات مرنة تناسبكم.\n\nأخوكم سعود | السعد لحلول الأعمال 🌿`;
   try {
-    await sock.sendMessage(jid, { text });
-    res.send('<h1 style="color:#10b981; text-align:center; font-family:sans-serif; margin-top:80px;">✅ تم إرسال رسالة العرض بنجاح!</h1><p style="text-align:center;"><a href="/">الرجوع</a></p>');
+    await sock.sendMessage(jid, { text: SIMPLE_PITCH });
+    res.send('<h1 style="color:#10b981; text-align:center; font-family:sans-serif; margin-top:80px;">✅ تم إرسال الرسالة الجديدة البسيطة إلى جوالك بنجاح! شيك على الواتساب 🚀</h1><p style="text-align:center;"><a href="/">الرجوع</a></p>');
   } catch (e) {
     res.send('خطأ: ' + e.message);
   }
