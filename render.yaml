@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: al-saad-whatsapp-engine
+    env: docker
+    plan: free
+    region: frankfurt
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: OPENROUTER_API_KEY
+        value: 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
+

@@ -1,0 +1,18 @@
+{
+  "name": "al-saad-baileys-cloud-engine",
+  "version": "1.0.0",
+  "description": "محرك واتساب السحابي المفتوح المصدر لـ السعد لحلول الأعمال - إشراف م. راكان",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.12",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "pino": "^9.6.0"
+  }
+}
+
