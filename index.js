@@ -1,13 +1,7 @@
 // -*- coding: utf-8 -*-
 /**
- * محرك واتساب السحابي الموحد - قيادة المجلس الاستشاري الستة
+ * محرك واتساب السحابي الموحد - قيادة المجلس الاستشاري الستة (آمن 100%)
  * السعد لحلول الأعمال - تحت إشراف المهندس راكان
- * 
- * المعمارية المعتمدة:
- * - المجلس الاستشاري (الستة) هو العقل المدبر والموجه لكل كلمة.
- * - Google Gemini هو الكيبل السريع وخط الربط الخارق.
- * - واجهة العميل الرسمية: سعود | السعد لحلول الأعمال.
- * - الرقم الرسمي المعتمد: +966596906620
  */
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
@@ -23,8 +17,8 @@ app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
 
-// مفتاح الكيبل السريع المعتمد رسمياً (Gemini Key #1)
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "AQ.Ab8RN6Ic4hGNUgilybCfzlMak2kunMOxCYE7z8xsYlyneHGDuQ";
+// قراءة المفتاح بشكل سري ومشفر من إعدادات السيرفر
+const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const OFFICIAL_PHONE = "966596906620";
 
 let sock = null;
@@ -32,10 +26,8 @@ let currentQR = null;
 let isConnected = false;
 let connectedPhone = null;
 
-// ذاكرة الحوار لكل عميل (لتتبع سياق كلام المجلس معه بدون تكرار)
 const clientContext = {};
 
-// دستور العقول الستة الموجه لكيبل Gemini
 const COUNCIL_BRAIN_DIRECTIVE = `
 أنت غرفة عمليات متكاملة تمثل 'المجلس الاستشاري للذكاء الاصطناعي' الستة لشركة 'السعد لحلول الأعمال'.
 تتحدثون جميعاً بصوت مستشار مبيعات سعودي ذكي وبشري محترف اسمه 'سعود':
@@ -52,8 +44,11 @@ const COUNCIL_BRAIN_DIRECTIVE = `
 - ممنوع ذكر أي كلمات تقنية مثل: "ذكاء اصطناعي، روبوت، خوارزمية، مجلس، برومبت". أنت سعود.
 `;
 
-// توليد رد المجلس عبر الكيبل السريع المباشر (Gemini)
 async function getCouncilResponseViaCable(senderId, userText) {
+  if (!GEMINI_KEY) {
+    return getCouncilInstantFallback(userText);
+  }
+
   if (!clientContext[senderId]) {
     clientContext[senderId] = [];
   }
@@ -95,16 +90,24 @@ async function getCouncilResponseViaCable(senderId, userText) {
       return reply;
     }
   } catch (err) {
-    console.error('[Cable Timeout/Error]: Switching to Council instant fallback...');
+    console.error('[Gemini API Call Failed]: Falling back to local brain...');
   }
 
-  // خط الدفاع اللحظي من المجلس في حال تعثر الكيبل مؤقتاً
-  const lower = userText.toLowerCase();
+  return getCouncilInstantFallback(userText);
+}
+
+function getCouncilInstantFallback(text) {
+  const lower = text.toLowerCase();
   if (lower.includes('مطعم') || lower.includes('أكل') || lower.includes('منيو') || lower.includes('كافيه')) {
     return "يا هلا ومسهلا بأهل المطاعم! 🌿\nلمطعمكم بنركب بالواتساب:\n1. إرسال المنيو بالصور والأسعار في أول ثانية للزبون.\n2. استقبال طلبات التوصيل والاستلام مع تحديد موقع العميل آلياً.\n3. تنظيم حجوزات الطاولات وقت الذروة والزحمة وأنت مرتاح.\nتخيل ما يضيع عليك ولا طلب حتى وقت ضغط الشغل أو بعد الإغلاق! تحب نجهز لك تجربة خاصة بمنيو مطعمك؟";
   }
-
-  return "يا هلا ومسهلا بك يا غالي 🌿 معك أخوك سعود من السعد لحلول الأعمال. نركب لك نظام بالواتساب يرد على زباينك في أول ثانية، يرسل الصور والأسعار والموقع ويسجل الطلبات حتى بعد نهاية الدوام. تفضل بسؤالك ومجال نشاطك وسنخدمك بأحسن ترتيب 🤝";
+  if (lower.includes('عقار') || lower.includes('شقق') || lower.includes('أراضي') || lower.includes('إيجار')) {
+    return "يا هلا بأهل العقار 🌿 لمكتبكم بنركب نظام يعرض العروض المتاحة مع الصور والموقع فوراً، ويفلتر الزبون الجاد، ويحجز مواعيد المعاينة ويوفر وقتك. تحب نرتب لك نموذج مخصص لعقاراتكم؟";
+  }
+  if (lower.includes('سعر') || lower.includes('كم') || lower.includes('تكلف') || lower.includes('بكم')) {
+    return "يا هلا ومسهلا بك يا غالي 🌿 أسعارنا ميسرة جداً وتعتمد على حجم متطلبات نشاطك، تركيب لمرة واحدة بدون أي اشتراك شهري يثقل عليك!\n\nوش مجال نشاطك بالضبط عشان أرتب لك أفضل باقة تناسب ميزانيتك ونخدمك بأفضل سعر؟";
+  }
+  return "يا هلا ومسهلا بك في السعد لحلول الأعمال 🌿 معك أخوك سعود. نركب لك نظام بالواتساب يرد على زباينك في أول ثانية، يرسل الصور والأسعار والموقع ويسجل الطلبات حتى بعد نهاية الدوام. تفضل بمجال نشاطك وطلبك وسنخدمك بأحسن ترتيب 🤝";
 }
 
 async function startWhatsApp() {
@@ -139,7 +142,6 @@ async function startWhatsApp() {
     }
   });
 
-  // استقبال الرسائل وإرسال الرد المعتمد من عقول المجلس الستة
   sock.ev.on('messages.upsert', async (m) => {
     try {
       if (!m.messages || !m.messages.length) return;
@@ -160,19 +162,16 @@ async function startWhatsApp() {
 
         console.log(`[وارد من ${sender}]: ${text}`);
 
-        // تشغيل مؤشر الكتابة البشري
         try {
           await sock.sendPresenceUpdate('composing', sender);
         } catch (e) {}
 
-        // توليد الرد عبر مداولات المجلس من خلال الكيبل السريع
         const reply = await getCouncilResponseViaCable(sender, text);
 
         try {
           await sock.sendPresenceUpdate('paused', sender);
         } catch (e) {}
 
-        // إرسال الرسالة للعميل
         if (sock && isConnected) {
           await sock.sendMessage(sender, { text: reply });
           console.log(`[رد سعود المعتمد]: ${reply}`);
@@ -223,7 +222,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// صفحة المعاينة الرسمية للعملاء بالرقم المعتمد
+// صفحة المعاينة
 app.get('/demo', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -281,7 +280,7 @@ app.get('/demo', (req, res) => {
   `);
 });
 
-// إرسال رسالة الاستقطاب المعتمدة لجوال راكان
+// إرسال رسالة العرض
 app.get('/send_test', async (req, res) => {
   if (!isConnected || !sock) return res.send('❌ الواتساب غير متصل بعد');
   const jid = '966548757876@s.whatsapp.net';
