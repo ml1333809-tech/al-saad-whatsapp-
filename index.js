@@ -1,8 +1,15 @@
 // -*- coding: utf-8 -*-
 /**
- * محرك واتساب الذكي فائق السرعة والموثوقية (Guaranteed Delivery Engine)
+ * محرك واتساب السحابي المدمج بعقول المجلس الاستشاري الستة (The 6 AI Council Core Engine)
  * السعد لحلول الأعمال - تحت إشراف المهندس راكان
- * المجلس الاستشاري: طارق، د. إبراهيم، كلود، راشد، فهد، سارة
+ * 
+ * العقول الستة تدير كل كلمة وكل رد خلف الستار باسم "سعود":
+ * 1. طارق المعماري (الربط الفني وهندسة الأنظمة والحلول)
+ * 2. د. إبراهيم (الاستراتيجية والتفاوض الذكي على الأسعار بدون حرق)
+ * 3. كلود كبير المهندسين (تحليل الاحتياج التقني للعميل بدقة هندسية)
+ * 4. المحقق راشد (كشف نوايا العميل وجديته وإدارة المخاطر)
+ * 5. فهد الجودة (ضبط جودة الحوار ومنع التكرار والرتابة)
+ * 6. سارة (الصياغة الإنسانية الراقية باللهجة السعودية البيضاء)
  */
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
@@ -17,72 +24,95 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "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";
 
 let sock = null;
 let currentQR = null;
 let isConnected = false;
 let connectedPhone = null;
 
-// عقل المجلس الاستشاري المدمج للردود البيعية المباشرة
-function getCouncilInstantReply(text) {
-  const lower = text.toLowerCase().trim();
+// ذاكرة المحادثة لكل عميل (تحفظ تسلسل الحوار كاملاً لتفادي التكرار)
+const chatContextMemory = {};
 
-  // 1. التحيات والترحيب
-  if (lower.includes('سلام') || lower.includes('مرحبا') || lower.includes('هلا') || lower.includes('مساء') || lower.includes('صباح') || lower.includes('يا هلا')) {
-    return "وعليكم السلام ورحمة الله وبركاته! يا هلا ومسهلا بك يا غالي 🌿 معك أخوك سعود من السعد لحلول الأعمال. نركب لك نظام بالواتساب يرد على زباينك 24 ساعة وما يضيع عليك أي زبون. تفضل بمجال نشاطك واستفسارك وأبشر بعزك.";
+// التوجيه الهيكلي لعقول المجلس الاستشاري الستة
+const COUNCIL_CONSENSUS_DIRECTIVE = `
+أنت غرفة عمليات متكاملة تمثل 'المجلس الاستشاري للذكاء الاصطناعي' المكون من 6 خبراء، تتحدثون جميعاً بصوت رجل مبيعات واستشارات سعودي محترف اسمه 'سعود' من 'السعد لحلول الأعمال':
+
+أعضاء المجلس المشتركون في صياغة كل رد:
+1. طارق المعماري: يحدد الحل الهندسي المناسب لنشاط العميل (مطعم، مقاولات، عقار، تجارة، عيادة).
+2. د. إبراهيم الاستراتيجي: يقود التفاوض المالي بمرونة وبدون حرق السعر (لا تعطي رقماً ثابتاً في أول الحوار، بل باقات ميسرة بدون اشتراك شهري وتعتمد على حجم متطلباته).
+3. كلود كبير المهندسين: يحلل تفاصيل مشكلة العميل (الزبائن اللي يضيعون بالليل، تنظيم الطلبات، المواعيد).
+4. المحقق راشد خبير المخاطر: يضمن سلامة العرض، الأمان، وإزالة أي تخوفات من الاختراق برابط المعاينة الرسمي.
+5. فهد الجودة: يراقب سياق الكلام ويمنع تماماً أي تكرار غبي للسلام أو العبارات المحفوظة. إذا العميل قال 'وعليكم السلام'، فهد يوجه بالدخول فوراً في الموضوع.
+6. سارة خبيرة الصياغة: تصيغ نتاج العقول الخمسة بلهجة سعودية بيضاء بشرية أصيلة، دافئة وذكية ومختصرة (سطرين إلى 3 أسطر فقط).
+
+تعليمات الحوار الصارمة:
+- اقرأ تاريخ المحادثة بالكامل وتفاعل معه كإنسان جالس على الجوال ويفكر بعمق.
+- لا تذكر إطلاقاً كلمات: 'المجلس، الذكاء الاصطناعي، الخبراء، الروبوت، السيستم'. أنت في الواجهة 'سعود'.
+- رابط صفحة المعاينة الرسمية إذا سأل كيف يعمل النظام أو طلب رؤية تجربة: https://al-saad-whatsapp.onrender.com/demo
+`;
+
+// توليد رد المجلس الاستشاري التوليدي الحي
+async function getCouncilDeliberationReply(senderId, incomingText) {
+  if (!chatContextMemory[senderId]) {
+    chatContextMemory[senderId] = [
+      { role: 'system', content: COUNCIL_CONSENSUS_DIRECTIVE }
+    ];
   }
 
-  // 2. السؤال عن السعر والتكلفة (د. إبراهيم: بدون حرق السعر مع إبراز المرونة)
-  if (lower.includes('سعر') || lower.includes('كم') || lower.includes('تكلف') || lower.includes('بكم') || lower.includes('اسعار') || lower.includes('فلوس') || lower.includes('قيمة')) {
-    return "يا هلا ومسهلا بك يا غالي 🌿 أسعارنا ميسرة جداً وتعتمد على حجم متطلبات نشاطك، تركيب لمرة واحدة بدون أي اشتراك شهري يثقل عليك!\n\nوش مجال نشاطك بالضبط عشان أرتب لك أفضل باقة تناسب ميزانيتك ونخدمك بأفضل سعر؟";
+  // إضافة رسالة العميل للذاكرة
+  chatContextMemory[senderId].push({
+    role: 'user',
+    content: incomingText
+  });
+
+  // تقليص الذاكرة لآخر 12 رسالة لحفظ السرعة والتركيز
+  if (chatContextMemory[senderId].length > 13) {
+    chatContextMemory[senderId] = [
+      chatContextMemory[senderId][0],
+      ...chatContextMemory[senderId].slice(-12)
+    ];
   }
 
-  // 3. طلب الشرح والتفاصيل والمعاينة
-  if (lower.includes('أبشر') || lower.includes('تم') || lower.includes('تفاصيل') || lower.includes('كيف') || lower.includes('شرح') || lower.includes('فيديو') || lower.includes('رابط') || lower.includes('معاينة')) {
-    return "تبشر بالجنة والرضا يا غالي 🤝 تقدر تشوف فيديو الشرح وتجربة النظام الحية من رابطنا الرسمي:\nhttps://al-saad-whatsapp.onrender.com/demo\n\nوعطني اسم محلك أو مكتبك ونجهز لك الترتيب فوراً.";
-  }
+  // نماذج الذكاء الاستشارية الفائقة
+  const models = [
+    'deepseek/deepseek-chat',
+    'meta-llama/llama-3.1-8b-instruct:free',
+    'mistralai/mistral-7b-instruct:free'
+  ];
 
-  // 4. التجربة والضمان والأمان
-  if (lower.includes('ضمان') || lower.includes('أمان') || lower.includes('تجربة') || lower.includes('اجرب') || lower.includes('جرب')) {
-    return "أبشر بعزك يا غالي! النظام آمن 100% ويعمل بربط رسمي على رقمك بدون برامج خارجية وبدون أي كلمات مرور، وتقدر تشوف طريقة عمله كاملة من رابطنا:\nhttps://al-saad-whatsapp.onrender.com/demo\n\nتفضل باسم مجالك لنبدأ لك الإعداد فوراً.";
-  }
-
-  // 5. أي سؤال آخر عام
-  return "يا هلا بك في السعد لحلول الأعمال 🌿 أبشر بعزك، نركب لك موظف واتساب ذكي يرد على زباينك بالثانية الواحدة حتى وقت انشغالك أو بعد الدوام. تفضل بطلبك أو استفسارك وسنخدمك بأحسن ترتيب 🤝";
-}
-
-// محرك الذكاء الاصطناعي مع ضمان الإرسال الحتمي
-async function resolveReplyWithAI(userText) {
-  // محاولة الذكاء الاصطناعي الخارجي مع مهلة صارمة (1.5 ثانية فقط!)
-  try {
-    const aiPromise = axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: 'mistralai/mistral-7b-instruct:free',
-      messages: [
-        {
-          role: 'system',
-          content: "أنت 'سعود' من السعد لحلول الأعمال بالسعودية. تتحدث باللهجة السعودية البيضاء الودودة. نركب نظام ردود واتساب 24/7 للمحلات والشركات. الأسعار ميسرة وتعتمد على حجم النشاط بدون اشتراكات شهرية. ردك في سطرين فقط باختصار ولطافة بدون ذكر كلمات تقنية."
+  for (const model of models) {
+    try {
+      const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+        model: model,
+        messages: chatContextMemory[senderId],
+        max_tokens: 250,
+        temperature: 0.65
+      }, {
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://al-saad-whatsapp.onrender.com',
+          'X-Title': 'Al-Saad AI Council'
         },
-        { role: 'user', content: userText }
-      ],
-      max_tokens: 120,
-      temperature: 0.6
-    }, {
-      headers: {
-        'Authorization': 'Bearer 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',
-        'Content-Type': 'application/json'
-      },
-      timeout: 1800
-    });
+        timeout: 8000
+      });
 
-    const res = await aiPromise;
-    if (res.data?.choices?.[0]?.message?.content) {
-      return res.data.choices[0].message.content.trim();
+      const reply = res.data?.choices?.[0]?.message?.content?.trim();
+      if (reply) {
+        chatContextMemory[senderId].push({
+          role: 'assistant',
+          content: reply
+        });
+        return reply;
+      }
+    } catch (e) {
+      console.log(`Council model ${model} busy, switching...`);
     }
-  } catch (e) {
-    // في حال بطء أو فشل الاتصال بالإنترنت، ننتقل فوراً إلى عقل المجلس المدمج فائق السرعة
   }
 
-  return getCouncilInstantReply(userText);
+  // استجابة المجلس التلقائية الطارئة عند انقطاع الشبكة
+  return "يا هلا ومسهلا بك يا غالي 🌿 معك سعود، أبشر بسعدك شغال أرتب لك أفضل حل لواتسابك يخدم مجالك ويوفر وقتك. تفضل بسؤالك ونخدمك بأحسن ترتيب 🤝";
 }
 
 async function startWhatsApp() {
@@ -108,9 +138,7 @@ async function startWhatsApp() {
     if (connection === 'close') {
       isConnected = false;
       const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) {
-        setTimeout(startWhatsApp, 3000);
-      }
+      if (shouldReconnect) setTimeout(startWhatsApp, 3000);
     } else if (connection === 'open') {
       isConnected = true;
       currentQR = null;
@@ -119,7 +147,7 @@ async function startWhatsApp() {
     }
   });
 
-  // معالجة الرسائل الواردة بإرسال حتمي مضمون
+  // الاستماع الشامل لمحادثات العملاء
   sock.ev.on('messages.upsert', async (m) => {
     try {
       if (!m.messages || !m.messages.length) return;
@@ -130,37 +158,36 @@ async function startWhatsApp() {
         const sender = msg.key.remoteJid;
         if (!sender || sender.includes('@g.us') || sender.includes('broadcast')) continue;
 
-        const rawText = msg.message?.conversation || 
-                         msg.message?.extendedTextMessage?.text || 
-                         msg.message?.imageMessage?.caption || 
-                         '';
+        const text = (
+          msg.message?.conversation || 
+          msg.message?.extendedTextMessage?.text || 
+          msg.message?.imageMessage?.caption || 
+          ''
+        ).trim();
 
-        const text = rawText.trim();
         if (!text) continue;
 
-        console.log(`[رسالة جديدة واردة من ${sender}]: ${text}`);
+        console.log(`[وارد من العميل ${sender}]: ${text}`);
 
-        // إظهار جاري الكتابة لمدة ثانية واحدة
+        // محاكاة الكتابة البشرية لطمأنة العميل
         try {
           await sock.sendPresenceUpdate('composing', sender);
         } catch (e) {}
 
-        // توليد الرد من عقول المجلس بضمان الإرسال
-        const reply = await resolveReplyWithAI(text);
+        // تشغيل عقول المجلس الستة لتحليل الرسالة وتوليد الرد البشري
+        const reply = await getCouncilDeliberationReply(sender, text);
 
-        // إيقاف إشارة الكتابة
         try {
           await sock.sendPresenceUpdate('paused', sender);
         } catch (e) {}
 
-        // إرسال الرسالة كنص مباشر دون اقتباس (لتفادي أي خطأ في بنية الرسالة)
         if (sock && isConnected) {
           await sock.sendMessage(sender, { text: reply });
-          console.log(`[✅ تم إرسال الرد بنجاح]: ${reply}`);
+          console.log(`[رد المجلس باسم سعود]: ${reply}`);
         }
       }
     } catch (err) {
-      console.error('Critical Upsert Error:', err.message);
+      console.error('Upsert Error:', err.message);
     }
   });
 }
@@ -172,10 +199,10 @@ app.get('/', (req, res) => {
     <html lang="ar" dir="rtl">
     <head>
       <meta charset="UTF-8">
-      <title>غرفة قيادة السعد | المحرك الذكي</title>
+      <title>غرفة تحكم السعد | محرك المجلس الاستشاري</title>
       <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@700;900&display=swap" rel="stylesheet">
       <style>
-        body { background:#070a12; color:#fff; font-family:'Tajawal',sans-serif; text-align:center; padding:30px 15px; margin:0; }
+        body { background:#070a12; color:#fff; font-family:'Tajawal',sans-serif; text-align:center; padding:35px 20px; }
         .box { background:#0f172a; border:1px solid #1e293b; max-width:480px; margin:auto; padding:25px; border-radius:20px; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
         .btn { display:inline-block; padding:14px 28px; border-radius:12px; font-weight:900; font-size:16px; text-decoration:none; margin-top:15px; }
         .btn-green { background:#10b981; color:#fff; }
@@ -187,7 +214,7 @@ app.get('/', (req, res) => {
         <h2 style="color:#10b981; margin:0 0 10px;">🌿 السعد لحلول الأعمال</h2>
         ${isConnected ? `
           <div style="font-size:45px;">🟢</div>
-          <h3 style="color:#34d399;">المحرك الاستشاري يعمل ويرد في أقل من ثانية!</h3>
+          <h3 style="color:#34d399;">عقول المجلس الستة تعمل وتدير المحادثات 24/7!</h3>
           <p style="color:#9ca3af;">الرقم النشط: +${connectedPhone}</p>
           <a href="/send_test" class="btn btn-green">🎯 إرسال رسالة العرض لجوال راكان الآن</a>
         ` : `
@@ -204,7 +231,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// صفحة المعاينة الرسمية
+// صفحة المعاينة
 app.get('/demo', (req, res) => {
   res.send(`
     <!DOCTYPE html>
