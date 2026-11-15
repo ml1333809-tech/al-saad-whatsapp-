@@ -1,7 +1,13 @@
 // -*- coding: utf-8 -*-
 /**
  * محرك واتساب السحابي الموحد - قيادة المجلس الاستشاري (11 عقلاً ومنظومة تفاوض حي 24/7)
- * السعد لحلول الأعمال - تحت إشراف المهندس راكان
+ * السعد لحلول الأعمال - تحت إشراف وتوجيه المهندس راكان
+ * 
+ * المزايا المدمجة:
+ * 1. تفاوض سعري تدريجي ذكي (1500 -> 1200 -> 1000 -> 800 كفزعة أخيرة).
+ * 2. لوحة تحكم CRM متكاملة على الرابط /crm بفلاتر وتتبع لحظي للحوارات.
+ * 3. حماية تامة من الحظر وقاعدة الـ 14 يوماً الصارمة لاستبعاد الصامتين نهائياً.
+ * 4. استبعاد الفود ترك والتركيز على القطاعات المربحة (عقارات، مقاولات، عيادات، عناية سيارات، مطاعم كبرى).
  */
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
@@ -29,7 +35,7 @@ if (!fs.existsSync(authFolder)) {
   fs.mkdirSync(authFolder, { recursive: true });
 }
 
-// إذا كان كود الجلسة الدائمة موجوداً في متغيرات البيئة، نستعيده فوراً قبل تشغيل السوكت
+// إذا كان كود الجلسة الدائمة موجوداً في متغيرات البيئة، نستعيده فوراً
 if (process.env.SESSION_DATA) {
   try {
     const credsJson = Buffer.from(process.env.SESSION_DATA, 'base64').toString('utf-8');
@@ -40,13 +46,104 @@ if (process.env.SESSION_DATA) {
   }
 }
 
+// ========================================================
+// قاعدة بيانات CRM المدمجة وحماية الحظر وقاعدة الـ 14 يوماً
+// ========================================================
+const crmFile = path.join(authFolder, 'crm_leads.json');
+
+const INITIAL_REAL_LEADS = [
+  { id: 1, name: "مؤسسة م. راكان للتجارة والديكور", city: "الرياض", category: "مقاولات وديكور", phone: "+966548757876", status: "AGREED", attempts: 1, last_msg: "تم الاتفاق والتجربة الحية المعتمدة", updated: "اليوم", negotiated_price: "1,200 ريال" },
+  { id: 2, name: "مكتب ماجد الصقعبي للعقارات", city: "الرياض", category: "عقارات ووساطة", phone: "+966550001141", status: "SENT", attempts: 1, last_msg: "أرسل سعود رسالة العرض المخصصة للعقارات", updated: "أمس", negotiated_price: "-", last_sent_date: new Date().toISOString() },
+  { id: 3, name: "مكتب الآلية للعقارات وإدارة الأملاك", city: "الرياض", category: "عقارات وإدارة أملاك", phone: "+966554873777", status: "SENT", attempts: 1, last_msg: "أرسل سعود رسالة العرض المخصصة للعقارات", updated: "أمس", negotiated_price: "-", last_sent_date: new Date().toISOString() },
+  { id: 4, name: "مكتب الخيار الصحيح للخدمات العقارية", city: "الرياض", category: "عقارات وخدمات", phone: "+966546444785", status: "READY", attempts: 0, last_msg: "جاهز للإرسال الآمن", updated: "جديد", negotiated_price: "-" },
+  { id: 5, name: "مكتب منزلك للتسويق العقاري", city: "الرياض", category: "عقارات وتسويق", phone: "+966508303507", status: "READY", attempts: 0, last_msg: "جاهز للإرسال الآمن", updated: "جديد", negotiated_price: "-" },
+  { id: 6, name: "مكتب مشاورات للعقارات", city: "الرياض", category: "عقارات النرجس", phone: "+966554595550", status: "READY", attempts: 0, last_msg: "جاهز للإرسال الآمن", updated: "جديد", negotiated_price: "-" },
+  { id: 7, name: "مؤسسة إعمار نجد للمقاولات العامة", city: "الرياض", category: "مقاولات وتشطيب", phone: "+966505441233", status: "READY", attempts: 0, last_msg: "جاهز للإرسال الآمن", updated: "جديد", negotiated_price: "-" },
+  { id: 8, name: "مركز درة الابتسامة لطب الأسنان", city: "الرياض", category: "عيادات ومراكز طبية", phone: "+966532219988", status: "READY", attempts: 0, last_msg: "جاهز للإرسال الآمن", updated: "جديد", negotiated_price: "-" },
+  { id: 9, name: "مركز بريق النخبة لتلميع وعناية السيارات", city: "الرياض", category: "عناية وتلميع سيارات", phone: "+966567781122", status: "READY", attempts: 0, last_msg: "جاهز للإرسال الآمن", updated: "جديد", negotiated_price: "-" },
+  { id: 10, name: "مطاعم ومطابخ القرية التراثية", city: "الرياض", category: "مطاعم كبرى وتوصيل", phone: "+966551122334", status: "READY", attempts: 0, last_msg: "جاهز للإرسال الآمن", updated: "جديد", negotiated_price: "-" }
+];
+
+function loadCrmLeads() {
+  try {
+    if (fs.existsSync(crmFile)) {
+      return JSON.parse(fs.readFileSync(crmFile, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('Error loading CRM leads:', e.message);
+  }
+  return INITIAL_REAL_LEADS;
+}
+
+function saveCrmLeads(leads) {
+  try {
+    fs.writeFileSync(crmFile, JSON.stringify(leads, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error saving CRM leads:', e.message);
+  }
+}
+
+// تحديث حالة العميل لحظياً عند وصول أي رسالة واتساب
+function updateCrmLeadOnMessage(senderJid, userText, botReply) {
+  try {
+    const rawNumber = senderJid.replace('@s.whatsapp.net', '');
+    const leads = loadCrmLeads();
+    let lead = leads.find(l => {
+      const p = l.phone.replace(/[^\d]/g, '');
+      return p === rawNumber || rawNumber.endsWith(p.slice(-9));
+    });
+
+    const nowStr = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+
+    if (!lead) {
+      lead = {
+        id: leads.length + 1,
+        name: `عميل واتساب جديد (${rawNumber.slice(-4)})`,
+        city: "السعودية",
+        category: "نشاط تجاري",
+        phone: "+" + rawNumber,
+        status: "REPLIED",
+        attempts: 1,
+        last_msg: userText,
+        updated: nowStr,
+        negotiated_price: "-"
+      };
+      leads.push(lead);
+    } else {
+      lead.last_msg = userText;
+      lead.updated = nowStr;
+
+      const agreeWords = ['تم', 'اتفقنا', 'موافق', 'اعتمد', 'ابشر', 'أبشر', 'خلاص نبيها', 'تعال ركب', 'ارسل الحساب'];
+      const isAgreed = agreeWords.some(w => userText.includes(w));
+
+      const negWords = ['1500', '1200', '1000', '800', 'سعر', 'السعر', 'غالي', 'خصم', 'كاش', 'ريال', 'بكم'];
+      const isNeg = negWords.some(w => userText.includes(w) || botReply.includes(w));
+
+      if (isAgreed) {
+        lead.status = "AGREED";
+      } else if (isNeg) {
+        lead.status = "NEGOTIATING";
+        if (userText.includes('800') || botReply.includes('800')) lead.negotiated_price = '800 ريال';
+        else if (userText.includes('1000') || botReply.includes('1000')) lead.negotiated_price = '1,000 ريال';
+        else if (userText.includes('1200') || botReply.includes('1200')) lead.negotiated_price = '1,200 ريال';
+        else if (userText.includes('1500') || botReply.includes('1500')) lead.negotiated_price = '1,500 ريال';
+      } else if (lead.status === 'SENT' || lead.status === 'READY') {
+        lead.status = "REPLIED";
+      }
+    }
+    saveCrmLeads(leads);
+  } catch (err) {
+    console.error('CRM Update Error:', err.message);
+  }
+}
+
 let sock = null;
 let currentQR = null;
 let isConnected = false;
 let connectedPhone = null;
 let lastLog = { time: "-", sender: "-", input: "-", reply: "-", model: "-", status: "-" };
+let isAutoDispatcherActive = false; // التحكم في محرك الإرسال الآلي
 
-// ذاكرة الحوار لكل عميل
 const clientHistory = {};
 
 // دستور غرفة عمليات المجلس الاستشاري الـ 11 (منظومة التفاوض الديناميكي الحي المتدرج)
@@ -67,13 +164,42 @@ const COUNCIL_BRAIN_DIRECTIVE = `
   * الجولة الثانية (إذا أصر العميل ورفض الـ 1200): لا تستسلم أيضاً، بل اعرض الالتقاء في المنتصف: "شوف وأنا أخوك، حنا ما ودنا نردك وودنا نقف معك، وش رايك نلتقي بالنص على 1,000 ريال كاش؟ وهذا سعر استثنائي وميسر وخاص لك".
   * الجولة الثالثة أو الرابعة (فقط إذا أصر العميل بشدة وهدد بعدم الشراء وقال ما أقدر على أكثر من 800): هنا فقط، وبعد 3 إلى 4 محاولات تفاوض، يمكنك النزول معه، وإشعاره بأنها فزعة واستثناء قوي: "والله إنها ما توفي التعب والبرمجة يا غالي، لكن تم وعشان خاطرك وما نردك خايب، بنضبطها لك بـ 800 ريال كاش الحين ونبدأ معك فوراً".
 
-قواعد أمنية ولغوية قطعية لا تقبل أي استثناء:
-- ممنوع العبارات العاطفية المبتذلة (مثل 'يا بعد عمري')، واستبدالها دائماً بعبارات التقدير السعودية الفخمة: 'يا غالي، يا طويل العمر، على راسي، وأنا أخوك، أبشر بالسعد، ما يصير خاطرك إلا طيب، تسلم يا أبو فلان'.
+قواعد قانونية وأخلاقية صارمة لمنع التحرش والجرائم المعلوماتية والابتذال:
+- ممنوع منعاً باتاً ومطلقاً وقاطعاً استخدام أي كلمات عاطفية، غزلية، أو مفرطة في الحميمية مثل: ('يا بعد عمري'، 'يا قلبي'، 'يا روحي'، 'يا عيوني'، 'يا بعد راسي'، 'حبيبي'، 'يا حبيبنا'، 'يا عسل'، 'يا قمر'، 'غناتي')! هذه الألفاظ مجرمة قانونياً في الأنظمة السعودية (نظام مكافحة التحرش والجرائم المعلوماتية) وتثير الشبهة وتدمر سمعة المؤسسة.
+- الالتزام الحصري الصارم بألفاظ الوقار والاحترام ورجال الأعمال في السوق السعودي فقط:
+  ('يا غالي'، 'يا طويل العمر'، 'أخوي الكريم'، 'على راسي'، 'وأنا أخوك'، 'أبشر بالسعد'، 'ما يصير خاطرك إلا طيب'، 'تسلم والله'، 'حياك الله').
+- ممنوع منعاً باتاً مناداة العميل بـ 'يا أبو فلان' كقالب جامد، ولا تناديه باسمه إلا إذا عرّف هو عن اسمه الصريح بنفسه.
 - تأكد التام من سلامة الإملاء العربي 100% وخلو الردود من أي حروف أو رموز مشوهة أو أجنبية.
 - ممنوع منعاً باتاً طلب رقم هاتف العميل؛ أنت تراسله على رقمه أصلاً.
 - ممنوع التسرع في إغلاق الصفقة بعبارات مثل "عطني الضوء الأخضر نربطه لك" قبل بناء الثقة وشرح الفائدة.
 - ممنوع ذكر مصطلحات: 'ذكاء اصطناعي، بوت، روبوت، خوارزمية، مجلس، برومبت'. أنت سعود.
 `;
+
+// فلتر التطهير القانوني الصارم لمنع أي شبهة تحرش أو جرائم معلوماتية أو ألفاظ غير لائقة تجارياً
+function sanitizeSaudiBusinessText(text) {
+  if (!text) return '';
+  let cleaned = text;
+  const bannedRules = [
+    { regex: /يا\s*بعد\s*عمري/gi, repl: 'يا غالي' },
+    { regex: /يا\s*قلبي/gi, repl: 'يا غالي' },
+    { regex: /يا\s*روحي/gi, repl: 'يا طويل العمر' },
+    { regex: /يا\s*عيوني/gi, repl: 'يا غالي' },
+    { regex: /يا\s*بعد\s*راسي/gi, repl: 'يا غالي' },
+    { regex: /حبيبي/gi, repl: 'يا غالي' },
+    { regex: /يا\s*حبيبنا/gi, repl: 'يا طويل العمر' },
+    { regex: /يا\s*عسل/gi, repl: 'يا غالي' },
+    { regex: /يا\s*قمر/gi, repl: 'يا طيب' },
+    { regex: /غناتي/gi, repl: 'يا طيب' },
+    { regex: /حياتي/gi, repl: 'يا غالي' },
+    { regex: /يا\s*أبو\s*فلان|أبو\s*فلان/gi, repl: 'يا غالي' },
+    { regex: /وعل\s*العين/gi, repl: 'وعلى العين' },
+    { regex: /على\s*حرس\s*الميزانية/gi, repl: 'على قد الميزانية' },
+  ];
+  for (const rule of bannedRules) {
+    cleaned = cleaned.replace(rule.regex, rule.repl);
+  }
+  return cleaned.trim();
+}
 
 // توليد رد المجلس الحي المباشر
 async function getCouncilResponseViaCable(senderId, userText) {
@@ -121,9 +247,11 @@ ${conversationHistoryText}
 
       const candidate = res.data?.candidates?.[0];
       const parts = candidate?.content?.parts || [];
-      const reply = parts.map(p => p.text || '').join('').trim();
+      let reply = parts.map(p => p.text || '').join('').trim();
 
       if (reply) {
+        // تطهير النص برمجياً عبر فلتر الحماية القانونية الصارم
+        reply = sanitizeSaudiBusinessText(reply);
         clientHistory[senderId].push(`سعود: ${reply}`);
         lastLog = { 
           time: new Date().toLocaleTimeString('ar-SA'), 
@@ -149,28 +277,111 @@ ${conversationHistoryText}
     }
   }
 
-  // في حال غياب الاتصال: عقل محلي استراتيجي ذكي يفهم النشاط
   return getSmartContextualFallback(userText);
 }
 
-// عقل محلي استراتيجي ذكي
 function getSmartContextualFallback(text) {
   const t = text.toLowerCase();
-  
   if (t.includes('مطعم') || t.includes('توصيل') || t.includes('وجبات') || t.includes('منيو') || t.includes('أكل')) {
-    return "يا هلا ومسهلا بأهل المطاعم! 🌿 لمطعمكم وتوصيلكم بنركز على نقطتين ترفع أرباحك:\n1. توديع عمولات التطبيقات (18% إلى 25%): زباينك الدائمين يطلبون منك دايركت بالواتساب، يستلمون المنيو بالصور والأسعار، ويحددون اللوكيشن، والطلب يوصل للمطبخ جاهز بدون ما تضيع ريال.\n2. صفر لخبطة وقت الذروة: اللوكيشن يوصل للسواق بدقة GPS، وأرقام فواتير آلية بدون ما ينشغل الكاشير.\nوالتركيب لمرة واحدة بدون أي نسبة أو اشتراك شهري يشاركك برزقك! كم فرع عندكم ووين موقعكم؟ 🤝";
+    return "يا هلا ومسهلا بأهل المطاعم! 🌿 لمطعمكم وتوصيلكم بنركز على نقطتين ترفع أرباحك:\n1. توديع عمولات التطبيقات (18% إلى 25%): زباينك الدائمين يطلبون منك دايركت بالواتساب، يستلمون المنيو بالصور والأسعار، ويحددون اللوكيشن، والطلب يوصل للمطبخ جاهز بدون ما تضيع ريال.\n2. صفر لخبطة وقت الذروة: اللوكيشن يوصل للسواق بدقة GPS، وأرقام فواتير آلية بدون ما ينشغل الكاشير.\nوالتركيب لمرة واحدة وبدون أي اشتراك شهري يشاركك برزقك! كم فرع عندكم ووين موقعكم؟ 🤝";
   }
-
-  if (t.includes('فود ترك') || t.includes('ترك') || t.includes('شباك') || t.includes('طابور')) {
-    return "يا هلا بأهل الفود ترك! 🚚 هذا وجع نعاني منه بالفعاليات والزحمة؛ نظام السعد يرسل للزبون المنيو بالصور أول ما يراسل، ويصدر له رقم طلب آلي يستلم عليه بدون تجمهر عند الشباك، وتتفرغ أنت للطبخ والخدمة. والتركيب مرة واحدة بدون أي اشتراك شهري. ودك نجهز لك تجربة خاصة بمنيو الفود ترك؟";
+  if (t.includes('عقار') || t.includes('أرض') || t.includes('شقة') || t.includes('إيجار') || t.includes('فيلا')) {
+    return "يا هلا ومسهلا بأهل العقار! 🏢 نظام السعد يخدم مكتبكم العقاري بالرد على الزباين بأول ثانية: يرسل العروض والصور والمواقع ويسجل بيانات رغبة العميل (شراء/إيجار/مساحة) تلقائياً، بدون ما يضيع وقت موظفيكم بالردود المكررة. والتركيب مرة واحدة بدون أي اشتراك شهري. ودك نجربه على عروض مكتبكم؟ 🤝";
   }
-
-  if (t.includes('كوفي') || t.includes('قهوة') || t.includes('كافيه')) {
-    return "يا هلا بأهل الكوفي ☕ التوصيل ميزة قوية بس مشكلتها تضييع وقت الكاشير بكتابة العناوين. نظامنا يرسل منيو المشروبات والحلا بالصور، ويستقبل اللوكيشن تلقائياً ويمرر الطلب للباريستا فوراً بدون تأخير. تركيب لمرة واحدة بدون أي اشتراك شهري. تحب نجربه على منيو كوفيكم؟";
+  if (t.includes('مقاولات') || t.includes('تشطيب') || t.includes('ترميم') || t.includes('ديكور')) {
+    return "يا هلا بشركاء الإعمار! 🏗️ نظامنا يوفر عليكم فرز طلبات المعاينات وعروض الأسعار؛ يستقبل استفسارات العملاء ويوثق المساحات ونوع التشطيب المطلوب وصور المخططات فوراً ويرسلها لمهندسكم جاهزة. تركيب مقطوع بدون اشتراكات شهرية. تحب نضبطه لمؤسستكم؟ 🤝";
   }
-
-  return "يا هلا بك يا غالي في السعد لحلول الأعمال 🌿 نظامنا يخدم زباين نشاطك بأول ثانية، يرسل المنيو والخدمات بالصور والأسعار ويسجل الطلبات والمواقع بدقة وبدون أي اشتراكات شهرية. قلي وش طبيعة نشاطك بالضبط عشان أشرح لك كيف بنفيدك عملياً 🤝";
+  return "يا هلا بك يا غالي في السعد لحلول الأعمال 🌿 نظامنا يخدم زباين نشاطك بأول ثانية، يرسل الكتالوج والخدمات بالصور والأسعار ويسجل الطلبات والمواقع بدقة وبدون أي اشتراكات شهرية. علمنا وش طبيعة نشاطك بالتحديد عشان أفيدك باللي يضبط شغلك 🤝";
 }
+
+// دالة صياغة رسالة العرض الافتتاحية المخصصة حسب القطاع
+function generateOutreachPitch(lead) {
+  const cat = lead.category || "";
+  if (cat.includes("عقار")) {
+    return `السلام عليكم ورحمة الله وبركاته، مساك الله بالخير يا غالي 🌿\n\nكم زبون واستفسار يضيع بين رسايل الواتساب وقت انشغالكم بالمعاينات والمفاوضات العقارية؟\n\nحنا في "السعد" نركب لمكتبكم نظام يرد على زباين العقار بأول ثانية: يرسل العروض والصور والمواقع ويسجل طلبات الزباين بدقة وبدون أي اشتراك شهري!\n\nرابط الشرح والمعاينة بالفيديو:\n🌐 https://al-saad-whatsapp.onrender.com/demo\n\nإذا حاب تجربه لمكتبكم، رد علي بكلمة (أبشر) ونخدمك فوراً 🤝\n\nأخوك سعود | السعد لحلول الأعمال`;
+  } else if (cat.includes("مقاولات") || cat.includes("ديكور")) {
+    return `السلام عليكم ورحمة الله وبركاته، مساك الله بالخير يا غالي 🏗️\n\nنوفر عليك وعلى مهندسينك وقت المعاينات وتنسيق المخططات؛ نظامنا الذكي يرد على عملاء المقاولات والديكور في الواتساب أول ما يراسلون، ويفرز طلبات التشطيب والمساحات والمواقع بدقة.\n\nبمبلغ مقطوع لمرة واحدة وبدون أي اشتراكات شهرية!\n\nرابط المعاينة:\n🌐 https://al-saad-whatsapp.onrender.com/demo\n\nإذا ودك تشوف كيف يضبط شغلك، رد علي بـ (أبشر) ويسعدنا خدمتك 🤝\n\nأخوك سعود | السعد لحلول الأعمال`;
+  } else if (cat.includes("عياد") || cat.includes("أسنان") || cat.includes("طبي")) {
+    return `السلام عليكم ورحمة الله وبركاته، مساكم الله بالخير 🌿\n\nلعيادتكم ومراجعينكم؛ نظام السعد على الواتساب يؤكد المواعيد آلياً، ويرسل لوكيشن العيادة وقائمة الأطباء والأسعار فوراً ويخفف الضغط عن موظفي الاستقبال بنسبة 70%.\n\nبدون اشتراكات شهرية!\n\nرابط المعاينة:\n🌐 https://al-saad-whatsapp.onrender.com/demo\n\nإذا حابين نربطه للعيادة، ردوا علينا بكلمة (أبشر) ونسعد بخدمتكم 🤝\n\nأخوكم سعود | السعد لحلول الأعمال`;
+  } else if (cat.includes("سيارات") || cat.includes("تلميع")) {
+    return `السلام عليكم ورحمة الله وبركاته، مساك الله بالخير يا غالي 🚗\n\nلمركزكم وعناية السيارات؛ نظام السعد الذكي يرسل للزبون باقات التلميع والتظليل والحماية بالأسعار والصور أول ما يراسل، ويثبت له موعد الحجز تلقائياً بدون تضييع وقت الفنيين.\n\nبدون أي اشتراك شهري!\n\nرابط المعاينة:\n🌐 https://al-saad-whatsapp.onrender.com/demo\n\nإذا ودك تجربه لمركزكم، رد بـ (أبشر) ونضبطه لك فوراً 🤝\n\nأخوك سعود | السعد لحلول الأعمال`;
+  } else {
+    return `السلام عليكم ورحمة الله وبركاته، مساك الله بالخير يا غالي 🌿\n\nكم زبون يراسلك بالواتساب وأنت مشغول أو بعد الدوام ويروح لغيرك؟\n\nحنا في "السعد" نركب لك في واتساب نشاطك نظام يرد على الزباين فوراً بأول ثانية: يشرح خدماتك، يرسل الصور والموقع، ويسجل الطلبات حتى وأنت نايم.\n\nتسهيلات ودعم مرن يناسب نشاطك بدون أي اشتراكات شهرية!\n\nرابط المعاينة بالفيديو:\n🌐 https://al-saad-whatsapp.onrender.com/demo\n\nإذا ناسبك وتبيه لمشروعك، رد علي بكلمة (أبشر) ونخدمك فوراً 🤝\n\nأخوك سعود | السعد لحلول الأعمال`;
+  }
+}
+
+// محرك الإرسال الآلي المستمر وتطبيق قاعدة الأسبوعين الصارمة
+setInterval(async () => {
+  if (!isAutoDispatcherActive || !isConnected || !sock) return;
+
+  try {
+    const leads = loadCrmLeads();
+    const now = Date.now();
+
+    for (const lead of leads) {
+      // 1. إرسال المحاولة الأولى للجاهزين
+      if (lead.status === "READY" && lead.attempts === 0) {
+        const cleanPhone = lead.phone.replace(/[^\d]/g, '');
+        const jid = `${cleanPhone}@s.whatsapp.net`;
+        const text = generateOutreachPitch(lead);
+
+        try {
+          await sock.sendMessage(jid, { text });
+          lead.status = "SENT";
+          lead.attempts = 1;
+          lead.last_sent_date = new Date().toISOString();
+          lead.last_msg = "تم إرسال العرض المخصص آلياً";
+          lead.updated = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+          saveCrmLeads(leads);
+          console.log(`[Auto Dispatcher]: Sent initial pitch to ${lead.name} (${lead.phone})`);
+          break; // إرسال رسالة واحدة ثم انتظار الفاصل الزمني لحماية الرقم
+        } catch (e) {
+          console.error(`Failed to send to ${lead.phone}:`, e.message);
+        }
+      }
+
+      // 2. تطبيق قاعدة الأسبوعين: متابعة ثانية وأخيرة بعد 14 يوماً فقط لمن لم يرد
+      if (lead.status === "SENT" && lead.attempts === 1 && lead.last_sent_date) {
+        const sentTime = new Date(lead.last_sent_date).getTime();
+        const diffDays = (now - sentTime) / (1000 * 60 * 60 * 24);
+
+        if (diffDays >= 14) {
+          const cleanPhone = lead.phone.replace(/[^\d]/g, '');
+          const jid = `${cleanPhone}@s.whatsapp.net`;
+          const followUpText = `السلام عليكم ورحمة الله يا غالي 🌿 مساك الله بالخير.. حبيت أطمئن عليك وعلى شغلكم، هل ما زلتم مهتمين بنظام الواتساب الذكي للرد على زباينكم وتسهيل الطلبات أو نلغي المراسلة عشان ما نزعجك؟ تحياتي لك 🤝`;
+
+          try {
+            await sock.sendMessage(jid, { text: followUpText });
+            lead.status = "FOLLOWUP_SENT";
+            lead.attempts = 2;
+            lead.last_sent_date = new Date().toISOString();
+            lead.last_msg = "المتابعة الثانية بعد أسبوعين (المحاولة الأخيرة)";
+            lead.updated = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+            saveCrmLeads(leads);
+            console.log(`[Auto Dispatcher]: Sent 14-day follow-up to ${lead.name}`);
+            break;
+          } catch (e) {
+            console.error(`Follow-up error for ${lead.phone}:`, e.message);
+          }
+        }
+      }
+
+      // 3. قفل الباب نهائياً (Dormant) إذا مر أسبوعان على المتابعة الثانية دون أي رد
+      if (lead.status === "FOLLOWUP_SENT" && lead.attempts >= 2 && lead.last_sent_date) {
+        const sentTime = new Date(lead.last_sent_date).getTime();
+        const diffDays = (now - sentTime) / (1000 * 60 * 60 * 24);
+        if (diffDays >= 14) {
+          lead.status = "DORMANT";
+          lead.last_msg = "تم إيقاف المراسلة نهائياً لحماية الرقم من الحظر (قاعدة الأسبوعين)";
+          saveCrmLeads(leads);
+          console.log(`[Auto Dispatcher]: Marked ${lead.name} as DORMANT forever.`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Dispatcher loop error:', err.message);
+  }
+}, 4 * 60 * 1000); // فاصل زمني آمن 4 دقائق بين كل إرسال لمحاكاة السلوك البشري
 
 async function startWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -236,6 +447,9 @@ async function startWhatsApp() {
         if (sock && isConnected) {
           await sock.sendMessage(sender, { text: reply });
           console.log(`[رد سعود المعتمد إلى ${sender}]: ${reply}`);
+          
+          // تحديث بيانات وسجل العميل في CRM لحظياً
+          updateCrmLeadOnMessage(sender, text, reply);
         }
       }
     } catch (err) {
@@ -247,17 +461,14 @@ async function startWhatsApp() {
 // مسار فحص الحياة البسيط (Ping)
 app.get('/ping', (req, res) => res.send('PONG_OK_24_7'));
 
-// نظام نبض القلب التلقائي لمنع سيرفر Render من النوم نهائياً (Keep-Alive Self-Ping)
+// نبض السيرفر المستمر كل 8 دقائق لمنع الخمول
 setInterval(async () => {
   try {
     await axios.get(`${RENDER_PUBLIC_URL}/ping`, { timeout: 5000 });
-    console.log('[Heartbeat]: Keep-alive ping sent to prevent sleep.');
-  } catch (err) {
-    // تجاهل أخطاء النبض أثناء التشغيل
-  }
-}, 8 * 60 * 1000); // نبضة كل 8 دقائق تضمن عدم دخول Render في وضع الخمول 15 دقيقة أبداً
+  } catch (err) {}
+}, 8 * 60 * 1000);
 
-// مسار استخراج كود الجلسة الدائمة لمنع طلب QR نهائياً
+// مسار استخراج كود الجلسة الدائمة
 app.get('/session', (req, res) => {
   const credsPath = path.join(authFolder, 'creds.json');
   if (fs.existsSync(credsPath)) {
@@ -294,44 +505,397 @@ app.get('/session', (req, res) => {
   }
 });
 
-// مسار فحص الاتصال الشامل
-app.get('/diag', async (req, res) => {
-  const testQuery = req.query.q || "عندي مطعم وفيه توصيل وش عندكم افكار للمطعم";
-  const results = {
-    server_time: new Date().toISOString(),
-    whatsapp_connected: isConnected,
-    connected_phone: connectedPhone,
-    has_session_data_env: Boolean(process.env.SESSION_DATA),
-    tests: {}
-  };
+// ========================================================
+// واجهة لوحة تحكم CRM الفاخرة المباشرة (/crm)
+// ========================================================
+app.get('/crm', (req, res) => {
+  const leads = loadCrmLeads();
+  
+  const totalCount = leads.length;
+  const sentCount = leads.filter(l => l.status === 'SENT' || l.status === 'FOLLOWUP_SENT').length;
+  const repliedCount = leads.filter(l => l.status === 'REPLIED' || l.status === 'NEGOTIATING' || l.status === 'AGREED' || l.status === 'IN_LIVE_NEGOTIATION').length;
+  const negCount = leads.filter(l => l.status === 'NEGOTIATING' || l.status === 'IN_LIVE_NEGOTIATION').length;
+  const agreedCount = leads.filter(l => l.status === 'AGREED').length;
+  const dormantCount = leads.filter(l => l.status === 'DORMANT').length;
 
-  const models = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
-  for (const m of models) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${GEMINI_KEY}`;
-    const payload = {
-      contents: [{ role: "user", parts: [{ text: testQuery }] }]
-    };
-    const t0 = Date.now();
-    try {
-      const response = await axios.post(url, payload, { timeout: 8000 });
-      const parts = response.data?.candidates?.[0]?.content?.parts || [];
-      const text = parts.map(p => p.text || '').join('').trim();
-      results.tests[m] = {
-        status: "SUCCESS",
-        http_code: response.status,
-        duration_ms: Date.now() - t0,
-        response_preview: text
-      };
-    } catch (err) {
-      results.tests[m] = {
-        status: "FAILED",
-        http_code: err.response?.status || "NO_RESPONSE",
-        error_message: err.response?.data?.error?.message || err.message
-      };
-    }
-  }
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>السعد لحلول الأعمال | غرفة التحكم والمبيعات الآلية (CRM)</title>
+      <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+      <style>
+        :root {
+          --bg: #070a12;
+          --card: #0f172a;
+          --card-border: #1e293b;
+          --emerald: #10b981;
+          --gold: #d4af37;
+          --blue: #3b82f6;
+          --purple: #8b5cf6;
+          --rose: #f43f5e;
+          --text: #f8fafc;
+          --muted: #94a3b8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Tajawal', sans-serif; }
+        body {
+          background-color: var(--bg);
+          color: var(--text);
+          padding: 20px;
+          min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 15px;
+          margin-bottom: 25px;
+          padding-bottom: 15px;
+          border-bottom: 1px solid var(--card-border);
+        }
+        .header-title h1 { font-size: 24px; color: var(--emerald); display: flex; align-items: center; gap: 8px; }
+        .header-title p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+        .nav-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn {
+          padding: 8px 16px;
+          border-radius: 10px;
+          font-weight: 700;
+          font-size: 13px;
+          text-decoration: none;
+          cursor: pointer;
+          border: none;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          transition: 0.2s ease;
+        }
+        .btn-emerald { background: var(--emerald); color: #fff; }
+        .btn-blue { background: var(--blue); color: #fff; }
+        .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
+        .btn-toggle-on { background: rgba(16, 185, 129, 0.2); color: var(--emerald); border: 1px solid var(--emerald); }
+        .btn-toggle-off { background: rgba(244, 63, 94, 0.2); color: var(--rose); border: 1px solid var(--rose); }
 
-  res.json(results);
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 15px;
+          margin-bottom: 25px;
+        }
+        .stat-card {
+          background: var(--card);
+          border: 1px solid var(--card-border);
+          border-radius: 16px;
+          padding: 16px;
+          text-align: center;
+        }
+        .stat-value { font-size: 28px; font-weight: 900; margin: 6px 0; }
+        .stat-label { font-size: 13px; color: var(--muted); }
+
+        .controls-bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-bottom: 20px;
+          background: var(--card);
+          padding: 12px 18px;
+          border-radius: 14px;
+          border: 1px solid var(--card-border);
+        }
+        .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filter-btn {
+          background: transparent;
+          border: 1px solid var(--card-border);
+          color: var(--muted);
+          padding: 6px 14px;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .filter-btn.active {
+          background: var(--emerald);
+          color: #fff;
+          border-color: var(--emerald);
+        }
+        .search-input {
+          background: #0b1120;
+          border: 1px solid var(--card-border);
+          color: #fff;
+          padding: 8px 14px;
+          border-radius: 8px;
+          font-size: 13px;
+          outline: none;
+          min-width: 220px;
+        }
+
+        .table-wrap {
+          background: var(--card);
+          border: 1px solid var(--card-border);
+          border-radius: 16px;
+          overflow-x: auto;
+        }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 14px; }
+        th { background: rgba(255,255,255,0.02); color: var(--muted); padding: 14px 16px; font-weight: 700; border-bottom: 1px solid var(--card-border); white-space: nowrap; }
+        td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+        tr:hover { background: rgba(255,255,255,0.02); }
+
+        .badge {
+          display: inline-block;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 800;
+          white-space: nowrap;
+        }
+        .badge-agreed { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid var(--emerald); }
+        .badge-neg { background: rgba(212, 175, 55, 0.15); color: #fbbf24; border: 1px solid #d4af37; }
+        .badge-replied { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid var(--blue); }
+        .badge-sent { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid #475569; }
+        .badge-dormant { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid var(--rose); }
+
+        .add-card {
+          background: var(--card);
+          border: 1px dashed var(--emerald);
+          border-radius: 16px;
+          padding: 18px;
+          margin-bottom: 25px;
+          display: none;
+        }
+        .form-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 12px;
+          margin-top: 12px;
+        }
+        .form-grid input, .form-grid select {
+          background: #0b1120;
+          border: 1px solid var(--card-border);
+          color: #fff;
+          padding: 10px;
+          border-radius: 8px;
+          font-size: 13px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        
+        <!-- الهيدر والتحكم -->
+        <div class="header">
+          <div class="header-title">
+            <h1>🌿 السعد لحلول الأعمال • غرفة التحكم والمبيعات (CRM)</h1>
+            <p>إدارة استقطاب الأنشطة الحقيقية والمفاوضات الحية 24/7 تحت إشراف م. راكان</p>
+          </div>
+          <div class="nav-actions">
+            <button class="btn ${isAutoDispatcherActive ? 'btn-toggle-on' : 'btn-toggle-off'}" onclick="toggleDispatcher()">
+              ⚡ الإرسال الآلي: ${isAutoDispatcherActive ? 'شغال ✅' : 'متوقف مؤقتاً ⏸️'}
+            </button>
+            <button class="btn btn-blue" onclick="toggleAddForm()">➕ إضافة رقم / نشاط جديد</button>
+            <a href="/" class="btn btn-outline">🏠 الرئيسية والباركود</a>
+          </div>
+        </div>
+
+        <!-- كارد إضافة نشاط جديد -->
+        <div id="addFormCard" class="add-card">
+          <h3 style="color:var(--emerald); font-size:16px;">إضافة نشاط تجاري جديد إلى قائمة الاستهداف:</h3>
+          <form action="/api/crm/lead" method="POST" class="form-grid">
+            <input type="text" name="name" placeholder="اسم المنشأة أو المحل" required>
+            <input type="text" name="city" placeholder="المدينة (مثال: الرياض)" required>
+            <select name="category" required>
+              <option value="عقارات ووساطة">عقارات ووساطة</option>
+              <option value="مقاولات وتشطيب">مقاولات وتشطيب</option>
+              <option value="عيادات ومراكز طبية">عيادات ومراكز طبية</option>
+              <option value="عناية وتلميع سيارات">عناية وتلميع سيارات</option>
+              <option value="مطاعم كبرى وتوصيل">مطاعم كبرى وتوصيل</option>
+              <option value="خدمات عامة ومحاماة">خدمات عامة ومحاماة</option>
+            </select>
+            <input type="text" name="phone" placeholder="رقم الجوال (05xxxxxxxx)" required>
+            <button type="submit" class="btn btn-emerald" style="grid-column: 1 / -1; justify-content: center;">حفظ وإدراج في الاستهداف 🚀</button>
+          </form>
+        </div>
+
+        <!-- بطاقات المؤشرات الإحصائية -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">👥 إجمالي الأنشطة</div>
+            <div class="stat-value" style="color:var(--text);">${totalCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">📤 تم الإرسال (Outreach)</div>
+            <div class="stat-value" style="color:var(--blue);">${sentCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">💬 تفاعلوا وردوا</div>
+            <div class="stat-value" style="color:#38bdf8;">${repliedCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">🤝 جاري المفاوضات</div>
+            <div class="stat-value" style="color:#fbbf24;">${negCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">🎉 تم الاتفاق (صفقات)</div>
+            <div class="stat-value" style="color:var(--emerald);">${agreedCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">⛔ صامتون (قفل الباب)</div>
+            <div class="stat-value" style="color:var(--rose);">${dormantCount}</div>
+          </div>
+        </div>
+
+        <!-- شريط الفلاتر والبحث -->
+        <div class="controls-bar">
+          <div class="filter-tabs">
+            <button class="filter-btn active" onclick="filterBy('ALL', this)">الكل (${totalCount})</button>
+            <button class="filter-btn" onclick="filterBy('AGREED', this)">تم الاتفاق (${agreedCount})</button>
+            <button class="filter-btn" onclick="filterBy('NEGOTIATING', this)">يفاوضون (${negCount})</button>
+            <button class="filter-btn" onclick="filterBy('REPLIED', this)">من رد (${repliedCount})</button>
+            <button class="filter-btn" onclick="filterBy('SENT', this)">لم يرد (${sentCount})</button>
+            <button class="filter-btn" onclick="filterBy('DORMANT', this)">صامتون (${dormantCount})</button>
+          </div>
+          <input type="text" id="searchInput" class="search-input" placeholder="🔍 ابحث بالاسم، الرقم، أو القطاع..." onkeyup="searchLeads()">
+        </div>
+
+        <!-- جدول العملاء والحالات -->
+        <div class="table-wrap">
+          <table id="leadsTable">
+            <thead>
+              <tr>
+                <th>المنشأة والمدينة</th>
+                <th>القطاع</th>
+                <th>رقم الواتساب</th>
+                <th>الحالة</th>
+                <th>السعر المتفاوض</th>
+                <th>آخر تحديث</th>
+                <th>آخر رسالة</th>
+                <th>الإجراء</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${leads.map(l => {
+                let badgeClass = 'badge-sent';
+                let badgeText = 'بانتظار الرد';
+                if (l.status === 'AGREED') { badgeClass = 'badge-agreed'; badgeText = '🎉 تم الاتفاق'; }
+                else if (l.status === 'NEGOTIATING' || l.status === 'IN_LIVE_NEGOTIATION') { badgeClass = 'badge-neg'; badgeText = '🤝 يفاوض السعر'; }
+                else if (l.status === 'REPLIED') { badgeClass = 'badge-replied'; badgeText = '💬 رد وتفاعل'; }
+                else if (l.status === 'DORMANT') { badgeClass = 'badge-dormant'; badgeText = '⛔ مقفل نهائياً'; }
+                else if (l.status === 'READY') { badgeClass = 'badge-sent'; badgeText = '⏳ جاهز للإرسال'; }
+
+                const cleanPhone = l.phone.replace(/[^\d]/g, '');
+
+                return `
+                  <tr data-status="${l.status}" data-name="${l.name}" data-phone="${l.phone}" data-category="${l.category}">
+                    <td><b>${l.name}</b><div style="font-size:12px; color:var(--muted);">${l.city}</div></td>
+                    <td>${l.category}</td>
+                    <td dir="ltr" style="text-align:right; font-family:monospace;">${l.phone}</td>
+                    <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+                    <td style="color:#34d399; font-weight:bold;">${l.negotiated_price || '-'}</td>
+                    <td style="font-size:12px; color:var(--muted);">${l.updated || '-'}</td>
+                    <td style="font-size:13px; max-width:250px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${l.last_msg || '-'}</td>
+                    <td>
+                      <a href="https://wa.me/${cleanPhone}" target="_blank" class="btn btn-outline" style="padding:4px 10px; font-size:12px;">💬 فتح</a>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <script>
+        function toggleAddForm() {
+          const f = document.getElementById('addFormCard');
+          f.style.display = f.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function filterBy(status, btn) {
+          document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          const rows = document.querySelectorAll('#leadsTable tbody tr');
+          rows.forEach(r => {
+            const rowStatus = r.getAttribute('data-status');
+            if (status === 'ALL') {
+              r.style.display = '';
+            } else if (status === 'AGREED' && rowStatus === 'AGREED') {
+              r.style.display = '';
+            } else if (status === 'NEGOTIATING' && (rowStatus === 'NEGOTIATING' || rowStatus === 'IN_LIVE_NEGOTIATION')) {
+              r.style.display = '';
+            } else if (status === 'REPLIED' && (rowStatus === 'REPLIED' || rowStatus === 'NEGOTIATING' || rowStatus === 'AGREED' || rowStatus === 'IN_LIVE_NEGOTIATION')) {
+              r.style.display = '';
+            } else if (status === 'SENT' && (rowStatus === 'SENT' || rowStatus === 'READY' || rowStatus === 'FOLLOWUP_SENT')) {
+              r.style.display = '';
+            } else if (status === 'DORMANT' && rowStatus === 'DORMANT') {
+              r.style.display = '';
+            } else {
+              r.style.display = 'none';
+            }
+          });
+        }
+
+        function searchLeads() {
+          const q = document.getElementById('searchInput').value.toLowerCase();
+          const rows = document.querySelectorAll('#leadsTable tbody tr');
+          rows.forEach(r => {
+            const text = (r.getAttribute('data-name') + ' ' + r.getAttribute('data-phone') + ' ' + r.getAttribute('data-category')).toLowerCase();
+            r.style.display = text.includes(q) ? '' : 'none';
+          });
+        }
+
+        async function toggleDispatcher() {
+          try {
+            const res = await fetch('/api/crm/toggle-dispatcher', { method: 'POST' });
+            const data = await res.json();
+            alert('حالة الإرسال الآلي الآن: ' + (data.active ? 'شغال ✅' : 'متوقف مؤقتاً ⏸️'));
+            location.reload();
+          } catch (e) {
+            alert('حدث خطأ في التبديل: ' + e.message);
+          }
+        }
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// مسار إضافة عميل جديد
+app.post('/api/crm/lead', (req, res) => {
+  const { name, city, category, phone } = req.body;
+  if (!phone || !name) return res.redirect('/crm');
+
+  let cleanPhone = phone.replace(/[^\d+]/g, '');
+  if (cleanPhone.startsWith('05')) cleanPhone = '+966' + cleanPhone.slice(1);
+  else if (cleanPhone.startsWith('5')) cleanPhone = '+966' + cleanPhone;
+
+  const leads = loadCrmLeads();
+  leads.push({
+    id: leads.length + 1,
+    name: name.trim(),
+    city: (city || 'الرياض').trim(),
+    category: (category || 'نشاط عام').trim(),
+    phone: cleanPhone,
+    status: 'READY',
+    attempts: 0,
+    last_msg: 'جاهز للإرسال الآمن',
+    updated: 'الآن',
+    negotiated_price: '-'
+  });
+
+  saveCrmLeads(leads);
+  res.redirect('/crm');
+});
+
+// مسار تفعيل / إيقاف محرك الإرسال الآلي
+app.post('/api/crm/toggle-dispatcher', (req, res) => {
+  isAutoDispatcherActive = !isAutoDispatcherActive;
+  res.json({ active: isAutoDispatcherActive });
 });
 
 // لوحة القيادة المباشرة
@@ -362,10 +926,12 @@ app.get('/', (req, res) => {
     <body>
       <div class="box">
         <h2 style="color:#10b981; margin:0 0 8px;">🌿 السعد لحلول الأعمال</h2>
-        <div style="color:#94a3b8; font-size:14px; margin-bottom:15px;">منظومة التفاوض الحي بقيادة المجلس الاستشاري (11 عقلاً) 24/7</div>
+        <div style="color:#94a3b8; font-size:14px; margin-bottom:15px;">منظومة التفاوض الحي والـ CRM بقيادة المجلس الاستشاري (11 عقلاً) 24/7</div>
 
         ${isConnected ? `
           <div class="status-pill pill-green">🟢 متصل ومستقر على واتساب +${OFFICIAL_PHONE}</div>
+          <br>
+          <a href="/crm" class="btn btn-blue" style="font-size:16px;">📊 فتح لوحة المبيعات والـ CRM الحية</a>
           <br>
           <a href="/session" class="btn btn-purple">🔑 حفظ الجلسة الدائمة لمنع طلب الرمز نهائياً</a>
           <br>
@@ -379,7 +945,7 @@ app.get('/', (req, res) => {
         <div style="margin-top:20px; border-top:1px solid #1e293b; padding-top:18px;">
           <h4 style="margin:0 0 10px; color:#38bdf8;">⚡ فحص ذكاء سعود الحي في المتصفح</h4>
           <form action="/test_ai" method="get">
-            <input type="text" name="q" value="عندي مطعم وفيه توصيل وش عندكم افكار للمطعم" placeholder="اكتب سؤال العميل هنا...">
+            <input type="text" name="q" value="عندي مكتب عقارات وش عندكم افكار" placeholder="اكتب سؤال العميل هنا...">
             <br>
             <button type="submit" class="btn btn-blue">اختبر رد سعود الآن 🚀</button>
           </form>
@@ -406,7 +972,7 @@ app.get('/', (req, res) => {
 
 // تجربة الذكاء مباشرة من المتصفح
 app.get('/test_ai', async (req, res) => {
-  const query = req.query.q || "عندي مطعم وفيه توصيل وش عندكم افكار للمطعم";
+  const query = req.query.q || "عندي مكتب عقارات وش عندكم افكار";
   const reply = await getCouncilResponseViaCable('browser_test', query);
   res.send(`
     <html lang="ar" dir="rtl">
@@ -494,6 +1060,47 @@ app.get('/send_test', async (req, res) => {
   } catch (e) {
     res.send('خطأ: ' + e.message);
   }
+});
+
+// مسار فحص الاتصال الشامل
+app.get('/diag', async (req, res) => {
+  const testQuery = req.query.q || "عندي مكتب عقارات وش عندكم افكار";
+  const results = {
+    server_time: new Date().toISOString(),
+    whatsapp_connected: isConnected,
+    connected_phone: connectedPhone,
+    has_session_data_env: Boolean(process.env.SESSION_DATA),
+    auto_dispatcher_active: isAutoDispatcherActive,
+    tests: {}
+  };
+
+  const models = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+  for (const m of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${GEMINI_KEY}`;
+    const payload = {
+      contents: [{ role: "user", parts: [{ text: testQuery }] }]
+    };
+    const t0 = Date.now();
+    try {
+      const response = await axios.post(url, payload, { timeout: 8000 });
+      const parts = response.data?.candidates?.[0]?.content?.parts || [];
+      const text = parts.map(p => p.text || '').join('').trim();
+      results.tests[m] = {
+        status: "SUCCESS",
+        http_code: response.status,
+        duration_ms: Date.now() - t0,
+        response_preview: text
+      };
+    } catch (err) {
+      results.tests[m] = {
+        status: "FAILED",
+        http_code: err.response?.status || "NO_RESPONSE",
+        error_message: err.response?.data?.error?.message || err.message
+      };
+    }
+  }
+
+  res.json(results);
 });
 
 process.on('uncaughtException', (err) => console.error('Uncaught Exception:', err.message));
