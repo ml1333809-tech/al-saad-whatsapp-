@@ -1,6 +1,6 @@
 // -*- coding: utf-8 -*-
 /**
- * محرك واتساب السحابي الموحد - قيادة المجلس الاستشاري (11 عقلاً ومنظومة متكاملة)
+ * محرك واتساب السحابي الموحد - قيادة المجلس الاستشاري (11 عقلاً ومنظومة تفاوض حي 24/7)
  * السعد لحلول الأعمال - تحت إشراف المهندس راكان
  */
 
@@ -17,12 +17,28 @@ app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
 
-// المفتاح النشط والمؤكد التابع لاشتراك قوقل المعتمد للمهندس راكان (تشفير Base64 لمنع حجب GitHub)
+// المفتاح المشترك النشط المعتمد للمهندس راكان
 const ACTIVE_PAID_KEY = Buffer.from("QVEuQWI4Uk42SXpMeUlIU3laa2VBUmFxUlk4YU91TlA0ZFZORnd0QVJubl9yTmM0ZmVGQlE=", "base64").toString("utf-8");
-
-// نثبت المفتاح المعتمد مباشرة لمنع أي متغير بيئة قديم أو معطل في سيرفر Render من تخريب الاتصال
 const GEMINI_KEY = ACTIVE_PAID_KEY;
 const OFFICIAL_PHONE = "966596906620";
+const RENDER_PUBLIC_URL = "https://al-saad-whatsapp.onrender.com";
+
+// معالجة التخزين الدائم للجلسة (Permanent Session Storage)
+const authFolder = path.join(__dirname, 'auth_info');
+if (!fs.existsSync(authFolder)) {
+  fs.mkdirSync(authFolder, { recursive: true });
+}
+
+// إذا كان كود الجلسة الدائمة موجوداً في متغيرات البيئة، نستعيده فوراً قبل تشغيل السوكت
+if (process.env.SESSION_DATA) {
+  try {
+    const credsJson = Buffer.from(process.env.SESSION_DATA, 'base64').toString('utf-8');
+    fs.writeFileSync(path.join(authFolder, 'creds.json'), credsJson);
+    console.log('✅ تم استرجاع جلسة الواتساب الدائمة من SESSION_DATA بنجاح!');
+  } catch (err) {
+    console.error('فشل استعادة الجلسة من SESSION_DATA:', err.message);
+  }
+}
 
 let sock = null;
 let currentQR = null;
@@ -30,34 +46,34 @@ let isConnected = false;
 let connectedPhone = null;
 let lastLog = { time: "-", sender: "-", input: "-", reply: "-", model: "-", status: "-" };
 
-// ذاكرة الحوار لكل عميل (نصوص مبسطة لمنع خطأ 400 في Multi-turn)
+// ذاكرة الحوار لكل عميل
 const clientHistory = {};
 
-// دستور العقول الـ 11 الموجه لكيبل الذكاء الاصطناعي
+// دستور غرفة عمليات المجلس الاستشاري الـ 11 (منظومة التفاوض الديناميكي الحي)
 const COUNCIL_BRAIN_DIRECTIVE = `
 أنت 'سعود' - مستشار أعمال ميداني وتنفيذي لشركة 'السعد لحلول الأعمال' في السعودية.
-تتحدث بلهجة سعودية بيضاء محترفة وودودة ولبقة جداً وواقعية وعملية.
-خلفك غرفة عمليات استشارية متكاملة تقودها 4 أجنحة و11 عقلاً استراتيجياً:
-1. جناح المعمارية والسياق: طارق المعماري + كيمي (فهم نموذج عمل العميل بدقة وتصميم الحل الفني المناسب لنشاطه).
-2. جناح البرمجة والتنفيذ: كلود كبير المهندسين + كوين (حل مشاكل ضغط العمل، تنظيم أرقام الطلبات، ربط المنيو، وتفادي ضياع الزباين وقت الذروة).
-3. جناح الاستدلال وهندسة الربحية: د. إبراهيم + ديب سيك (توضيح أن الدفع ميسر لمرة واحدة بدون اشتراك شهري، وحساب جدوى التوصيل والحد الأدنى للطلب).
-4. جناح الأمان والجودة: المحقق راشد + فهد الجودة + كودسترال + لاما (منع التكرار نهائياً، فلترة العبارات المعلبة، والتحقق من مصداقية العرض).
-5. الصياغة والتنفيذ: سارة (صياغة الردود بلهجة سعودية أصيلة، دافئة وذكية ومختصرة في 3-4 أسطر).
+تتحدث بلهجة سعودية بيضاء محترفة وودودة ولبقة جداً وواقعية وعملية، وتفهم عقلية التاجر وصاحب المحل السعودي في السوق.
+أنت لست آلة ولا قالباً جامداً؛ أنت تفهم وتحلل وتفاوض كإنسان خبير مدعوم بغرفة عمليات من 11 عقلاً استراتيجياً:
+1. جناح المعمارية والسياق (طارق + كيمي): يحلل نموذج عمل العميل (مطعم، كافيه، متجر، مغسلة...) ويحدد نقاط الألم التشغيلية بدقة.
+2. جناح البرمجة والتنفيذ (كلود + كوين): يضع الحلول التقنية المباشرة (منيو تفاعلي بالصور، لوكيشن GPS آلي، تنظيم أرقام الطلبات، فواتير فورية).
+3. جناح الاستدلال وهندسة الربحية (د. إبراهيم + ديب سيك R1): يحسب للعميل بالأرقام كم سيوفر (توفير 20% عمولات تطبيقات التوصيل، زيادة متوسط الفاتورة، سعر تركيب مقطوع ميسر بدون اشتراك شهري).
+4. جناح الأمان والجودة (المحقق راشد + فهد الجودة + كودسترال + لاما 3.3): يفرض أعلى معايير المصداقية والثقة، ويمنع أي تصرف يوحي بالريبة.
+5. التوليف والصياغة التنفيذية (سارة): تصيغ الرد بأسلوب سعودي راقٍ ومركز في 3 إلى 5 أسطر.
 
-شروط صارمة قطعية:
-- رد مباشرة على كلام العميل وحل مشكلته في نشاطه فوراً.
-- إذا ذكر العميل نشاطه (مثل: فود ترك، كافيه، مطعم، مغسلة، متجر، عقار)، ممنوع نهائياً أن تسأله "وش مجالك" لأنه قاله لك! بل اشرح له كيف يفيده النظام في نشاطه بالتحديد!
-- إذا سأل عن أرقام طلبات للفود ترك أو الكافيه: اشرح له كيف يعطي النظام كل زبون رقم طلب آلي وينظم الاستلام بدون لخبطة ولا طوابير.
-- ممنوع منعاً باتاً ذكر مصطلحات تقنية مثل: "ذكاء اصطناعي، بوت، روبوت، خوارزمية، مجلس، برومبت". أنت إنسان مستشار سعودي حقيقي اسمك سعود.
+قواعد أمنية وسلوكية قطعية لا تقبل أي استثناء:
+- ممنوع منعاً باتاً طلب رقم هاتف العميل! أنت تتحدث معه على رقمه في الواتساب أصلاً، وطلب الرقم يثير الشك والريبة وكأنه محاولة اختراق!
+- ممنوع التسرع في إغلاق الصفقة أو القول "عطني الضوء الأخضر نربطه لك" قبل أن تشرح للعميل بدقة كيف يفيده النظام في مشروعه وتجيبه على كل استفساراته.
+- إذا كان العميل صاحب مطعم أو كوفي وعنده توصيل: ركز على أوجاعه الحقيقية (عمولات التطبيقات العالية 18-25%، ضياع وقت الكاشير وقت الذروة، السواق اللي يتصل يسأل عن الوصف، لخبطة الطلبات).
+- أجب بشكل ديناميكي وحي بناءً على ما يذكره العميل تحديداً، واختم دائماً بسؤال ذكي يحفزه على متابعة النقاش براحة تامة.
+- ممنوع ذكر مصطلحات: 'ذكاء اصطناعي، بوت، روبوت، خوارزمية، مجلس، برومبت'. أنت سعود.
 `;
 
-// توليد رد المجلس عبر الكيبل السريع المباشر (مع حماية تامة ضد أخطاء Multi-turn)
+// توليد رد المجلس الحي المباشر
 async function getCouncilResponseViaCable(senderId, userText) {
   if (!clientHistory[senderId]) {
     clientHistory[senderId] = [];
   }
 
-  // إضافة رسالة العميل للذاكرة
   clientHistory[senderId].push(`العميل: ${userText}`);
   if (clientHistory[senderId].length > 6) {
     clientHistory[senderId] = clientHistory[senderId].slice(-6);
@@ -67,11 +83,11 @@ async function getCouncilResponseViaCable(senderId, userText) {
 
   const fullPrompt = `${COUNCIL_BRAIN_DIRECTIVE}
 
-سياق المحادثة حتى الآن:
+سياق المحادثة الجارية مع العميل:
 ${conversationHistoryText}
 
 المطلوب:
-أجب العميل الآن بلسان 'سعود' بلهجة سعودية ذكية وعملية ومقنعة في 3 إلى 4 أسطر، معالجة صلب سؤاله الأخير مباشرة:`;
+أجب العميل الآن بلسان 'سعود' بأسلوب مستشار مبيعات سعودي ذكي ومقنع، يعالج صلب كلامه الأخير ويبني الثقة ويقدم أفكاراً عملية لنشاطه:`;
 
   const payload = {
     contents: [
@@ -82,7 +98,7 @@ ${conversationHistoryText}
     ],
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 350
+      maxOutputTokens: 380
     }
   };
 
@@ -110,7 +126,7 @@ ${conversationHistoryText}
           model: model,
           status: 'SUCCESS 200'
         };
-        console.log(`[نجح التوليد عبر ${model}]:`, reply);
+        console.log(`[رد حي عبر ${model}]:`, reply);
         return reply;
       }
     } catch (err) {
@@ -126,31 +142,30 @@ ${conversationHistoryText}
     }
   }
 
-  // في حال تعطل الاتصال بالكامل، نستخدم العقل المحلي الذكي المخصص للأنشطة
+  // في حال غياب الاتصال: عقل محلي استراتيجي ذكي يفهم النشاط
   return getSmartContextualFallback(userText);
 }
 
-// عقل محلي استراتيجي ذكي يفهم النشاط حتى لو انقطع الإنترنت بالكامل
+// عقل محلي استراتيجي ذكي
 function getSmartContextualFallback(text) {
   const t = text.toLowerCase();
   
-  if (t.includes('فود ترك') || t.includes('ترك') || t.includes('طعام') || t.includes('برجر') || t.includes('شاورما') || t.includes('أرقام') || t.includes('تنظيم')) {
-    return "يا هلا بأهل الفود ترك! 🚚 هذا وجع نعاني منه في كل فعالية وزحمة! نظام السعد يرسل للزبون المنيو بالصور والأسعار في أول ثانية، ويصدر له رقم طلب آلي أول ما يطلب، عشان يستلم طلبه بدون ما يتجمع الناس حول الشباك وتلخبطون. والتركيب مرة واحدة بدون اشتراك شهري يثقل عليكم. تحب نجهز لك تجربة خاصة بمنيو الفود ترك حقكم؟";
-  }
-  
-  if (t.includes('كوفي') || t.includes('قهوة') || t.includes('كافيه') || t.includes('باريستا') || t.includes('توصيل مجاني')) {
-    return "يا هلا بأهل الكوفي ☕ التوصيل المجاني ميزة قوية بس مشكلتها تضييع وقت الكاشير في كتابة العناوين. نظامنا بالواتساب يرسل منيو المشروبات والحلا بالصور، ويستقبل اللوكيشن تلقائياً ويمرر الطلب للباريستا فوراً بدون أي تأخير. والتركيب لمرة واحدة وبدون أي اشتراك شهري. تحب نركبه لك ونبدأ فيه؟";
+  if (t.includes('مطعم') || t.includes('توصيل') || t.includes('وجبات') || t.includes('منيو') || t.includes('أكل')) {
+    return "يا هلا ومسهلا بأهل المطاعم! 🌿 لمطعمكم وتوصيلكم بنركز على نقطتين ترفع أرباحك:\n1. توديع عمولات التطبيقات (18% إلى 25%): زباينك الدائمين يطلبون منك دايركت بالواتساب، يستلمون المنيو بالصور والأسعار، ويحددون اللوكيشن، والطلب يوصل للمطبخ جاهز بدون ما تضيع ريال.\n2. صفر لخبطة وقت الذروة: اللوكيشن يوصل للسواق بدقة GPS، وأرقام فواتير آلية بدون ما ينشغل الكاشير.\nوالتركيب لمرة واحدة بدون أي نسبة أو اشتراك شهري يشاركك برزقك! كم فرع عندكم ووين موقعكم؟ 🤝";
   }
 
-  if (t.includes('سعر') || t.includes('بكم') || t.includes('تكلفة') || t.includes('كم')) {
-    return "يا هلا بك يا غالي 🌿 أسعارنا ميسرة جداً وتناسب حجم نشاطك، تركيب لمرة واحدة وبدون أي اشتراك شهري يثقل عليك! قلي وش طبيعة نشاطك بالضبط عشان أرتب لك أفضل باقة تناسب ميزانيتك 🤝";
+  if (t.includes('فود ترك') || t.includes('ترك') || t.includes('شباك') || t.includes('طابور')) {
+    return "يا هلا بأهل الفود ترك! 🚚 هذا وجع نعاني منه بالفعاليات والزحمة؛ نظام السعد يرسل للزبون المنيو بالصور أول ما يراسل، ويصدر له رقم طلب آلي يستلم عليه بدون تجمهر عند الشباك، وتتفرغ أنت للطبخ والخدمة. والتركيب مرة واحدة بدون أي اشتراك شهري. ودك نجهز لك تجربة خاصة بمنيو الفود ترك؟";
   }
 
-  return "يا هلا ومسهلا بك يا غالي في السعد لحلول الأعمال 🌿 نظامنا يخدم زباينك في أول ثانية، يرسل المنيو والخدمات بالصور والأسعار ويسجل الطلبات والمواقع حتى بعد نهاية الدوام وبدون أي اشتراكات شهرية. وش طبيعة نشاطكم عشان نخدمكم بأحسن حل؟ 🤝";
+  if (t.includes('كوفي') || t.includes('قهوة') || t.includes('كافيه')) {
+    return "يا هلا بأهل الكوفي ☕ التوصيل ميزة قوية بس مشكلتها تضييع وقت الكاشير بكتابة العناوين. نظامنا يرسل منيو المشروبات والحلا بالصور، ويستقبل اللوكيشن تلقائياً ويمرر الطلب للباريستا فوراً بدون تأخير. تركيب لمرة واحدة بدون أي اشتراك شهري. تحب نجربه على منيو كوفيكم؟";
+  }
+
+  return "يا هلا بك يا غالي في السعد لحلول الأعمال 🌿 نظامنا يخدم زباين نشاطك بأول ثانية، يرسل المنيو والخدمات بالصور والأسعار ويسجل الطلبات والمواقع بدقة وبدون أي اشتراكات شهرية. قلي وش طبيعة نشاطك بالضبط عشان أشرح لك كيف بنفيدك عملياً 🤝";
 }
 
 async function startWhatsApp() {
-  const authFolder = path.join(__dirname, 'auth_info');
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
   sock = makeWASocket({
@@ -222,14 +237,64 @@ async function startWhatsApp() {
   });
 }
 
-// مسار فحص الاتصال الشامل (Diagnostics Endpoint)
+// مسار فحص الحياة البسيط (Ping)
+app.get('/ping', (req, res) => res.send('PONG_OK_24_7'));
+
+// نظام نبض القلب التلقائي لمنع سيرفر Render من النوم نهائياً (Keep-Alive Self-Ping)
+setInterval(async () => {
+  try {
+    await axios.get(`${RENDER_PUBLIC_URL}/ping`, { timeout: 5000 });
+    console.log('[Heartbeat]: Keep-alive ping sent to prevent sleep.');
+  } catch (err) {
+    // تجاهل أخطاء النبض أثناء التشغيل
+  }
+}, 8 * 60 * 1000); // نبضة كل 8 دقائق تضمن عدم دخول Render في وضع الخمول 15 دقيقة أبداً
+
+// مسار استخراج كود الجلسة الدائمة لمنع طلب QR نهائياً
+app.get('/session', (req, res) => {
+  const credsPath = path.join(authFolder, 'creds.json');
+  if (fs.existsSync(credsPath)) {
+    const b64 = fs.readFileSync(credsPath).toString('base64');
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="UTF-8">
+        <title>كود الجلسة الدائمة | السعد</title>
+        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@700&display=swap" rel="stylesheet">
+        <style>
+          body { background:#070a12; color:#fff; font-family:'Tajawal',sans-serif; text-align:center; padding:35px 15px; }
+          .card { background:#0f172a; border:1px solid #1e293b; max-width:540px; margin:auto; padding:25px; border-radius:18px; }
+          textarea { width:95%; height:130px; background:#1e293b; color:#34d399; font-family:monospace; font-size:12px; padding:10px; border:1px solid #334155; border-radius:8px; margin-top:10px; }
+          .btn { background:#10b981; color:#fff; padding:10px 20px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; margin-top:10px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h2 style="color:#10b981;">🔑 كود الجلسة الدائمة (SESSION_DATA)</h2>
+          <p style="color:#94a3b8; font-size:14px;">انسخ هذا الكود لمرة واحدة وضعه في متغيرات بيئة Render باسم <b>SESSION_DATA</b>، ولن يطلب منك مسح الرمز نهائياً بعد اليوم حتى لو أعدت بناء السيرفر!</p>
+          <textarea id="sessionText" readonly>${b64}</textarea>
+          <br>
+          <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('sessionText').value); alert('تم نسخ كود الجلسة بنجاح!');">📋 اضغط لنسخ الكود</button>
+          <br><br>
+          <a href="/" style="color:#38bdf8; text-decoration:none;">الرجوع للوحة القيادة</a>
+        </div>
+      </body>
+      </html>
+    `);
+  } else {
+    res.send('<h3>الجلسة غير مسجلة حالياً. يرجى مسح رمز QR أولاً من الصفحة الرئيسية.</h3><a href="/">الرجوع</a>');
+  }
+});
+
+// مسار فحص الاتصال الشامل
 app.get('/diag', async (req, res) => {
-  const testQuery = req.query.q || "عندي محل فود ترك وابي اسوي طلبات وتنظيمها وارقام لكل زبون";
+  const testQuery = req.query.q || "عندي مطعم وفيه توصيل وش عندكم افكار للمطعم";
   const results = {
     server_time: new Date().toISOString(),
     whatsapp_connected: isConnected,
     connected_phone: connectedPhone,
-    key_prefix: GEMINI_KEY.slice(0, 12) + "..." + GEMINI_KEY.slice(-5),
+    has_session_data_env: Boolean(process.env.SESSION_DATA),
     tests: {}
   };
 
@@ -278,6 +343,7 @@ app.get('/', (req, res) => {
         .btn { display:inline-block; padding:12px 24px; border-radius:12px; font-weight:900; font-size:15px; text-decoration:none; margin:8px; cursor:pointer; border:none; }
         .btn-green { background:#10b981; color:#fff; }
         .btn-blue { background:#2563eb; color:#fff; }
+        .btn-purple { background:#8b5cf6; color:#fff; }
         .qr-card { background:#fff; padding:12px; border-radius:12px; display:inline-block; margin:15px 0; }
         .status-pill { display:inline-block; padding:4px 14px; border-radius:30px; font-size:13px; font-weight:bold; margin-bottom:12px; }
         .pill-green { background:rgba(16,185,129,0.2); color:#34d399; border:1px solid #10b981; }
@@ -289,12 +355,14 @@ app.get('/', (req, res) => {
     <body>
       <div class="box">
         <h2 style="color:#10b981; margin:0 0 8px;">🌿 السعد لحلول الأعمال</h2>
-        <div style="color:#94a3b8; font-size:14px; margin-bottom:15px;">منظومة الذكاء الميداني بقيادة المجلس الاستشاري (11 عقلاً)</div>
+        <div style="color:#94a3b8; font-size:14px; margin-bottom:15px;">منظومة التفاوض الحي بقيادة المجلس الاستشاري (11 عقلاً) 24/7</div>
 
         ${isConnected ? `
           <div class="status-pill pill-green">🟢 متصل ومستقر على واتساب +${OFFICIAL_PHONE}</div>
           <br>
-          <a href="/send_test" class="btn btn-green">🎯 إرسال رسالة العرض لجوال راكان الآن</a>
+          <a href="/session" class="btn btn-purple">🔑 حفظ الجلسة الدائمة لمنع طلب الرمز نهائياً</a>
+          <br>
+          <a href="/send_test" class="btn btn-green">🎯 إرسال رسالة تجريبية لجوال راكان</a>
         ` : `
           <div class="status-pill pill-yellow">🟡 بانتظار مسح الرمز من الواتساب</div>
           <p style="color:#9ca3af; font-size:13px;">افتح WhatsApp Business: الإعدادات ➔ الأجهزة المرتبطة ➔ ربط جهاز</p>
@@ -304,11 +372,13 @@ app.get('/', (req, res) => {
         <div style="margin-top:20px; border-top:1px solid #1e293b; padding-top:18px;">
           <h4 style="margin:0 0 10px; color:#38bdf8;">⚡ فحص ذكاء سعود الحي في المتصفح</h4>
           <form action="/test_ai" method="get">
-            <input type="text" name="q" value="عندي محل فود ترك وابي اسوي طلبات وتنظيمها وارقام لكل زبون" placeholder="اكتب سؤال العميل هنا...">
+            <input type="text" name="q" value="عندي مطعم وفيه توصيل وش عندكم افكار للمطعم" placeholder="اكتب سؤال العميل هنا...">
             <br>
             <button type="submit" class="btn btn-blue">اختبر رد سعود الآن 🚀</button>
           </form>
-          <div style="margin-top:10px;"><a href="/diag" target="_blank" style="color:#64748b; font-size:12px; text-decoration:none;">🔍 فحص السيرفر والكيبل مباشرة (JSON)</a></div>
+          <div style="margin-top:10px;">
+            <a href="/diag" target="_blank" style="color:#64748b; font-size:12px; text-decoration:none;">🔍 فحص السيرفر والكيبل مباشرة (JSON)</a>
+          </div>
         </div>
 
         ${lastLog.reply !== '-' ? `
@@ -329,7 +399,7 @@ app.get('/', (req, res) => {
 
 // تجربة الذكاء مباشرة من المتصفح
 app.get('/test_ai', async (req, res) => {
-  const query = req.query.q || "عندي محل فود ترك وابي اسوي طلبات وتنظيمها وارقام لكل زبون";
+  const query = req.query.q || "عندي مطعم وفيه توصيل وش عندكم افكار للمطعم";
   const reply = await getCouncilResponseViaCable('browser_test', query);
   res.send(`
     <html lang="ar" dir="rtl">
